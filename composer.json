@@ -1,0 +1,72 @@
+{
+    "name": "andrebarthelmeshellmuth/blackbox-optimizer",
+    "type": "library",
+    "version": "1.0.0",
+    "description": "Derivative-free, box-constrained black-box minimization for PHP: CMA-ES and Differential Evolution behind one standardized interface. Framework-agnostic -- given any array<float> -> float objective function and per-dimension bounds, finds the vector that minimizes it. Extracted from spryker-community/search-ranking-optimizer, where it originally shipped as an internal, Spryker-coupled implementation detail.",
+    "license": "MIT",
+    "keywords": [
+        "optimization",
+        "cma-es",
+        "differential-evolution",
+        "black-box-optimization",
+        "derivative-free"
+    ],
+    "require": {
+        "php": ">=8.3"
+    },
+    "require-dev": {
+        "dealerdirect/phpcodesniffer-composer-installer": "^1.0.0",
+        "phpmd/phpmd": "^2.15.0",
+        "phpstan/phpstan": "^2.0.0",
+        "phpunit/phpunit": "^11.0.0",
+        "rector/rector": "^2.0",
+        "slevomat/coding-standard": "^8.0.0",
+        "squizlabs/php_codesniffer": "^3.9.0"
+    },
+    "scripts": {
+        "test": "phpunit",
+        "phpstan": "phpstan analyse -c phpstan.neon src/",
+        "phpcs": "phpcs -p --standard=phpcs.xml src/ tests/",
+        "phpcbf": "phpcbf -p --standard=phpcs.xml src/ tests/",
+        "phpmd": "phpmd src/ text phpmd.xml",
+        "rector": "rector process",
+        "rector-dry-run": "rector process --dry-run"
+    },
+    "scripts-descriptions": {
+        "test": "Runs the PHPUnit suite (benchmark-function correctness tests for every algorithm).",
+        "phpstan": "Static analysis at level 8.",
+        "phpcs": "Coding standard check (PSR-12 based).",
+        "phpcbf": "Auto-fixes coding standard violations where possible.",
+        "phpmd": "Complexity / method- and class-size limits.",
+        "rector": "Applies Rector's configured rule sets (PHP floor upgrades + level-0 dead-code/code-quality) to src/ and tests/.",
+        "rector-dry-run": "Shows what Rector would change without writing anything."
+    },
+    "autoload": {
+        "psr-4": {
+            "BlackboxOptimizer\\": "src/BlackboxOptimizer/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "BlackboxOptimizerTest\\": "tests/BlackboxOptimizerTest/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
+    },
+    "minimum-stability": "stable",
+    "homepage": "https://github.com/andrebarthelmeshellmuth/blackbox-optimizer",
+    "authors": [
+        {
+            "name": "Andre Barthelmes",
+            "role": "Developer"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/andrebarthelmeshellmuth/blackbox-optimizer/issues",
+        "source": "https://github.com/andrebarthelmeshellmuth/blackbox-optimizer"
+    }
+}
