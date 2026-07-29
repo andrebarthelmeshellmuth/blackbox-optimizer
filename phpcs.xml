@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<ruleset name="BlackboxOptimizer">
+    <description>
+        Coding standard for andrebarthelmeshellmuth/blackbox-optimizer -- PSR-12 plus a small set of
+        modernization/strictness rules, no framework-specific ruleset since this package has no framework
+        dependency of its own.
+    </description>
+
+    <config name="php_version" value="80300"/>
+
+    <file>src/</file>
+    <file>tests/</file>
+
+    <arg name="colors"/>
+    <arg value="p"/>
+
+    <rule ref="PSR12"/>
+
+    <!-- Descriptive test-assertion messages (e.g. "should converge close to the known optimum at...")
+         intentionally run long; PSR12's default 120-char soft limit would warn on nearly every one. -->
+    <rule ref="Generic.Files.LineLength">
+        <properties>
+            <property name="lineLimit" value="190"/>
+            <property name="absoluteLineLimit" value="0"/>
+        </properties>
+    </rule>
+
+    <rule ref="Generic.Arrays.DisallowLongArraySyntax"/>
+    <rule ref="SlevomatCodingStandard.Functions.UnusedParameter"/>
+</ruleset>
