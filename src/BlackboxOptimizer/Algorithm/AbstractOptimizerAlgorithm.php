@@ -158,6 +158,8 @@ abstract class AbstractOptimizerAlgorithm implements OptimizerAlgorithmInterface
      * @param array<int, float> $lowerBounds
      * @param array<int, float> $upperBounds
      *
+     * @throws \InvalidArgumentException
+     *
      * @return array<int, float>
      */
     protected function randomVectorWithinBounds(array $lowerBounds, array $upperBounds): array
@@ -165,7 +167,18 @@ abstract class AbstractOptimizerAlgorithm implements OptimizerAlgorithmInterface
         $vector = [];
 
         foreach ($lowerBounds as $index => $lowerBound) {
-            $vector[$index] = $lowerBound + $this->randomizer->getFloat(0.0, 1.0) * ($upperBounds[$index] - $lowerBound);
+            $upperBound = $upperBounds[$index];
+
+            if (is_infinite($lowerBound) || is_infinite($upperBound)) {
+                throw new InvalidArgumentException(
+                    'Every dimension must be finitely bounded to sample a random vector within bounds -- an '
+                    . 'infinite bound has no finite range to sample from. An algorithm that needs to start from '
+                    . 'an unbounded dimension must be given an explicit starting point instead (e.g. '
+                    . 'CmaEsAlgorithm::setInitialMean()).',
+                );
+            }
+
+            $vector[$index] = $lowerBound + $this->randomizer->getFloat(0.0, 1.0) * ($upperBound - $lowerBound);
         }
 
         return $vector;

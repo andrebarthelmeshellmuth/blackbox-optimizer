@@ -141,4 +141,21 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
 
         (new DifferentialEvolutionAlgorithm())->setCrossoverProbability(1.5);
     }
+
+    /**
+     * Unlike {@see \BlackboxOptimizer\Algorithm\CmaEsAlgorithm}, DE has no initialMean-style escape hatch --
+     * its initial population is always drawn uniformly from the bounds themselves, which is undefined for
+     * an infinite bound. Must fail loudly rather than silently produce INF/NAN candidates that never
+     * improve (a real bug this test guards against: the initial population generator used to build such a
+     * vector with no validation at all).
+     *
+     * @return void
+     */
+    public function testOptimizeThrowsWhenABoundIsInfinite(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        $problem = new CallableProblem(static fn (array $vector): float => $vector[0] ** 2, [-INF], [INF]);
+        (new DifferentialEvolutionAlgorithm())->optimize($problem);
+    }
 }
