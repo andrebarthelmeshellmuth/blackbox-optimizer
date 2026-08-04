@@ -2,10 +2,12 @@
 
 Derivative-free, box-constrained black-box minimization for PHP. Given any `array<float> -> float`
 objective function and per-dimension bounds, finds the vector that minimizes it — no gradient, no
-assumption about what the function computes, just repeated evaluation. Ships two algorithms behind one
+assumption about what the function computes, just repeated evaluation. Ships three algorithms behind one
 standardized interface: **CMA-ES** (adapts a full covariance matrix as it searches — generally the
-stronger choice, at some extra complexity) and **Differential Evolution** (mutation/crossover/selection
-only — simpler, "the thing to beat").
+strongest choice, at some extra complexity), a classic **Rechenberg/Schwefel Evolution Strategy** (isotropic
+mutation with Rechenberg's own 1/5 success rule for step-size control — the historical predecessor CMA-ES
+grew out of, no covariance matrix), and **Differential Evolution** (mutation/crossover/selection only —
+simplest, "the thing to beat").
 
 Framework-agnostic and dependency-free: `require php: >=8.3` only. Originally built inside
 [spryker-community/search-ranking-optimizer](https://github.com/andrebarthelmeshellmuth/spryker-search-ranking-optimizer)
@@ -121,14 +123,19 @@ A consumer with real per-parameter names, an `Integer` dimension, or its own rep
   covariance matrix from generation to generation so it learns the search space's actual shape (correlated
   dimensions, differing sensitivities) rather than searching each one independently. Generally the
   stronger choice; some extra internal complexity (an eigendecomposition every generation) as the cost.
+- **`RechenbergSchwefelEsAlgorithm`** — a (μ+λ)-ES: Rechenberg's isotropic Gaussian mutation plus-selection
+  scheme, generalized to multiple parents/offspring the way Schwefel did, with a single scalar step size
+  adapted by Rechenberg's own "1/5 success rule" instead of CMA-ES's learned covariance. The historical
+  predecessor CMA-ES itself grew out of — meaningfully simpler (no covariance matrix, no cumulation paths),
+  at the cost of not learning correlations between dimensions the way CMA-ES does.
 - **`DifferentialEvolutionAlgorithm`** — DE/rand/1/bin: mutation + binomial crossover + greedy selection,
   nothing more. Deliberately the simplest population-based optimizer here — included as a baseline "the
   thing to beat" rather than because it's expected to win, and as proof `OptimizerAlgorithmInterface`
   genuinely generalizes beyond CMA-ES's own shape.
 
-Both are validated in this package's own test suite against standard benchmark functions with known optima
-(the sphere function, the Rosenbrock "banana" function) before ever being pointed at a real, much more
-expensive objective — see [Testing and CI](#testing-and-ci).
+All three are validated in this package's own test suite against standard benchmark functions with known
+optima (the sphere function, the Rosenbrock "banana" function) before ever being pointed at a real, much
+more expensive objective — see [Testing and CI](#testing-and-ci).
 
 ## Expressing constraints beyond a box
 
@@ -161,6 +168,11 @@ its own `SimplexSoftmaxReparametrization`/`ParameterVectorMapper` as the domain-
 above — the actual weight-tuning logic, rank_eval objective, and Spryker integration all stay there; only
 the generic optimization core moved.
 
+`RechenbergSchwefelEsAlgorithm` is different — it was written directly in this package, not extracted from
+`search-ranking-optimizer`. It implements `OptimizerAlgorithmInterface` the same way the other two do, so
+any consumer (including `search-ranking-optimizer`) can pick it up as a third selectable algorithm without
+this package's own API changing.
+
 ## Installation
 
 ```bash
@@ -175,13 +187,13 @@ an algorithm, build a `Problem`, call `optimize()`.
 - **Global bounds only, no cross-dimension constraints** — see
   [Expressing constraints beyond a box](#expressing-constraints-beyond-a-box) above; anything beyond an
   independent box bound per dimension needs a reparametrization on the caller's side.
-- **A fixed iteration count is the only stopping criterion.** Neither algorithm detects a fitness plateau
-  or supports automatic restarts (e.g. CMA-ES's own IPOP-CMA-ES variant) — deliberately, in favor of
-  simple, reviewable reference code. Tune `setMaxIterations()` for your own problem's cost/quality
+- **A fixed iteration count is the only stopping criterion.** No shipped algorithm detects a fitness
+  plateau or supports automatic restarts (e.g. CMA-ES's own IPOP-CMA-ES variant) — deliberately, in favor
+  of simple, reviewable reference code. Tune `setMaxIterations()` for your own problem's cost/quality
   trade-off instead of relying on early stopping.
 - **`Integer` parameters are declared, not enforced.** `ParameterType::Integer` exists so a `Problem` can
-  honestly describe an integer dimension, but neither shipped algorithm currently rounds a candidate to the
-  nearest integer for it — both operate on plain continuous floats throughout.
+  honestly describe an integer dimension, but no shipped algorithm currently rounds a candidate to the
+  nearest integer for it — all three operate on plain continuous floats throughout.
 - **CMA-ES's eigendecomposition runs every generation**, with no "only every few generations" optimization
   real production CMA-ES implementations use. Fine at the dimensionality this package targets (a handful to
   a few dozen parameters); a problem with hundreds of dimensions would pay a real, avoidable cost here.
@@ -199,12 +211,12 @@ composer phpmd     # complexity / size limits
 composer phpstan    # static analysis, level 8
 ```
 
-Both algorithms are validated against the sphere function (single global minimum at the origin — a basic
-convexity sanity check) and the 2D Rosenbrock "banana" function (a narrow, curved, non-convex valley — a
-meaningfully stronger check, and specifically the kind of shape CMA-ES's covariance adaptation exists to
-navigate better than DE can). Each test asserts convergence close to the known optimum, a monotonically
-non-worsening best-value history, and the exact expected evaluation count for a given population/iteration
-budget.
+All three algorithms are validated against the sphere function (single global minimum at the origin — a
+basic convexity sanity check) and the 2D Rosenbrock "banana" function (a narrow, curved, non-convex valley
+— a meaningfully stronger check, and specifically the kind of shape CMA-ES's covariance adaptation exists
+to navigate better than DE or the ES can, so its own test tolerances are looser). Each test asserts
+convergence close to the known optimum, a monotonically non-worsening best-value history, and the exact
+expected evaluation count for a given population/iteration budget.
 
 ## License
 
@@ -215,3 +227,8 @@ MIT. See [LICENSE](LICENSE).
 `CmaEsAlgorithm` is a PHP port of **Nikolaus Hansen**'s own simplified reference implementation of CMA-ES
 ("purecma") — the algorithm and its careful, from-scratch-avoiding implementation approach are entirely his
 life's work; any bugs introduced in adapting it to PHP are mine alone.
+
+`RechenbergSchwefelEsAlgorithm` implements the Evolution Strategy pair **Ingo Rechenberg** and
+**Hans-Paul Schwefel** originated in the 1960s/70s — Rechenberg's (1+1)-ES and its 1/5 success rule for
+step-size adaptation, generalized to multiple parents/offspring the way Schwefel did. CMA-ES is itself a
+much later descendant of this same lineage.

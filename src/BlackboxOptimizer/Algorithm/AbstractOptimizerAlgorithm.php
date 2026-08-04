@@ -243,4 +243,22 @@ abstract class AbstractOptimizerAlgorithm implements OptimizerAlgorithmInterface
             $this->bestValueHistory,
         );
     }
+
+    /**
+     * Box-Muller transform — a standard, simple way to draw from N(0,1) without depending on any PHP
+     * extension beyond what {@see \Random\Randomizer} already provides. Shared by every algorithm here
+     * that needs isotropic Gaussian mutation ({@see \BlackboxOptimizer\Algorithm\CmaEsAlgorithm},
+     * {@see \BlackboxOptimizer\Algorithm\RechenbergSchwefelEsAlgorithm}) — promoted up here once a second
+     * algorithm needed it, the same justification that already moved matrix/vector arithmetic out into
+     * {@see \BlackboxOptimizer\Algorithm\Internal\VectorMath}.
+     *
+     * @return float
+     */
+    protected function standardNormal(): float
+    {
+        $u1 = max($this->randomizer->getFloat(0.0, 1.0), PHP_FLOAT_EPSILON);
+        $u2 = $this->randomizer->getFloat(0.0, 1.0);
+
+        return sqrt(-2.0 * log($u1)) * cos(2.0 * M_PI * $u2);
+    }
 }

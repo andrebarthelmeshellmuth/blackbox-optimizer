@@ -298,20 +298,6 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
     }
 
     /**
-     * Box-Muller transform — a standard, simple way to draw from N(0,1) without depending on any
-     * PHP extension beyond what {@see \Random\Randomizer} already provides.
-     *
-     * @return float
-     */
-    protected function standardNormal(): float
-    {
-        $u1 = max($this->randomizer->getFloat(0.0, 1.0), PHP_FLOAT_EPSILON);
-        $u2 = $this->randomizer->getFloat(0.0, 1.0);
-
-        return sqrt(-2.0 * log($u1)) * cos(2.0 * M_PI * $u2);
-    }
-
-    /**
      * @param array<int, array{x: array<int, float>}> $samples
      * @param array<int, int> $rankedIndexes Sample indexes, best (lowest value) first.
      * @param array<int, float> $weights
