@@ -31,6 +31,17 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
     }
 
     /**
+     * @return void
+     */
+    public function testExposesFactualNameAndDescriptionMetadata(): void
+    {
+        $algorithm = new RechenbergSchwefelEsAlgorithm();
+
+        $this->assertSame('Rechenberg/Schwefel ES', $algorithm->getName());
+        $this->assertNotSame('', $algorithm->getDescription());
+    }
+
+    /**
      * The n-dimensional sphere function f(x) = sum(x_i^2) has a single global minimum of 0 at the origin
      * -- the simplest possible convex benchmark, good for a basic sanity check.
      *

@@ -82,12 +82,21 @@ keep in sync by position.
 ```php
 interface OptimizerAlgorithmInterface
 {
+    public function getName(): string;
+    public function getDescription(): string;
     public function optimize(ProblemInterface $problem): OptimizationResult;
     public function setStepWidth(float $stepWidth): static;
     public function setPopulationSize(int $populationSize): static;
     public function setMaxIterations(int $maxIterations): static;
 }
 ```
+
+**`getName()`** / **`getDescription()`** — a short label ("CMA-ES") and a factual, one- or two-sentence
+description of what the algorithm mechanically does, e.g. "adapts a full covariance matrix as it
+searches." Deliberately not opinionated about how the algorithms compare (no "generally the stronger
+choice") — that stays in [Choosing an algorithm](#choosing-an-algorithm) below and is scope for a consumer
+to add on top, not for this package. Meant for a consumer building a UI on top of this package (e.g. an
+algorithm picker) to read instead of hand-copying this README's prose.
 
 The three setters are the knobs every population-based algorithm here already has *some* version of, given
 one shared name instead of a bespoke method per algorithm:

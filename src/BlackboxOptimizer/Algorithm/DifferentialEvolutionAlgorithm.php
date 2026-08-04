@@ -112,6 +112,23 @@ class DifferentialEvolutionAlgorithm extends AbstractOptimizerAlgorithm
     }
 
     /**
+     * @return string
+     */
+    public function getName(): string
+    {
+        return 'Differential Evolution';
+    }
+
+    /**
+     * @return string
+     */
+    public function getDescription(): string
+    {
+        return 'DE/rand/1/bin: mutation, binomial crossover, and greedy selection, with no covariance '
+            . 'matrix or adaptive step size.';
+    }
+
+    /**
      * Algorithm-specific setup, deliberately NOT part of {@see OptimizerAlgorithmInterface} — call before
      * optimize() to override the default; skipping this call entirely is fine too.
      *
