@@ -17,7 +17,15 @@ namespace BlackboxOptimizer\Algorithm\Internal;
  * {@see VectorMath} and {@see SymmetricEigenDecomposition}: these are a self-contained concern, not
  * CMA-ES's own core covariance-adaptation math.
  *
- * @internal Used only by {@see \BlackboxOptimizer\Algorithm\CmaEsAlgorithm}.
+ * Also used, unmodified, by {@see \BlackboxOptimizer\Algorithm\RechenbergSchwefelEsAlgorithm} -- that
+ * algorithm has no covariance matrix, only a single scalar sigma, so it passes a single-element `[1.0]`
+ * where CmaEsAlgorithm passes its real per-dimension sqrt-eigenvalues array. See that class's own docblock
+ * for why this is a correct degenerate case, not an approximation: TolX/TolXUp collapse to a direct
+ * comparison against sigma itself, and ConditionCov's ratio is always exactly 1.0 (correctly never fires --
+ * there is no covariance to become ill-conditioned).
+ *
+ * @internal Used only by {@see \BlackboxOptimizer\Algorithm\CmaEsAlgorithm} and
+ *   {@see \BlackboxOptimizer\Algorithm\RechenbergSchwefelEsAlgorithm}.
  */
 class TerminationCriteria
 {

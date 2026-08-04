@@ -189,4 +189,29 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
         $problem = new CallableProblem(static fn (array $vector): float => $vector[0] ** 2, [-INF], [INF]);
         (new RechenbergSchwefelEsAlgorithm())->optimize($problem);
     }
+
+    /**
+     * Mirrors {@see \BlackboxOptimizerTest\Algorithm\CmaEsAlgorithmTest::testTrustTerminationCriteriaOverridesATooSmallSetMaxIterations()} --
+     * a deliberately tiny setMaxIterations() is ignored once trustTerminationCriteria() is on.
+     *
+     * @return void
+     */
+    public function testTrustTerminationCriteriaOverridesATooSmallSetMaxIterations(): void
+    {
+        // Arrange
+        $sphere = static fn (array $vector): float => $vector[0] ** 2 + $vector[1] ** 2;
+        $problem = new CallableProblem($sphere, [-5.0, -5.0], [5.0, 5.0]);
+
+        $algorithm = new RechenbergSchwefelEsAlgorithm();
+        $algorithm->setPopulationSize(20)->setMaxIterations(3)->trustTerminationCriteria();
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert -- history includes the initial-parents entry, so this is generations-run + 1.
+        $generationsRun = count($result->getBestValueHistory());
+        $this->assertGreaterThan(4, $generationsRun, 'The 3-generation cap from setMaxIterations() must be ignored once trustTerminationCriteria() is on.');
+        $this->assertLessThan(10000, $generationsRun, 'Should stop via the sigma-collapse criterion well before the safety ceiling, not by exhausting it.');
+        $this->assertLessThan(1e-4, $result->getBestValue(), 'Given the room to actually converge, the known minimum should be reached closely.');
+    }
 }

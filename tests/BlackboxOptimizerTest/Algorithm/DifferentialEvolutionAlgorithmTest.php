@@ -158,4 +158,31 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
         $problem = new CallableProblem(static fn (array $vector): float => $vector[0] ** 2, [-INF], [INF]);
         (new DifferentialEvolutionAlgorithm())->optimize($problem);
     }
+
+    /**
+     * Mirrors {@see \BlackboxOptimizerTest\Algorithm\CmaEsAlgorithmTest::testTrustTerminationCriteriaOverridesATooSmallSetMaxIterations()} --
+     * a deliberately tiny setMaxIterations() is ignored once trustTerminationCriteria() is on. Uses DE's
+     * own population-collapse criterion (no sigma/eigenvalues to check, unlike the other two algorithms --
+     * see this class's own docblock).
+     *
+     * @return void
+     */
+    public function testTrustTerminationCriteriaOverridesATooSmallSetMaxIterations(): void
+    {
+        // Arrange
+        $sphere = static fn (array $vector): float => $vector[0] ** 2 + $vector[1] ** 2;
+        $problem = new CallableProblem($sphere, [-5.0, -5.0], [5.0, 5.0]);
+
+        $algorithm = new DifferentialEvolutionAlgorithm();
+        $algorithm->setPopulationSize(20)->setMaxIterations(3)->trustTerminationCriteria();
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert -- history includes the initial-population entry, so this is generations-run + 1.
+        $generationsRun = count($result->getBestValueHistory());
+        $this->assertGreaterThan(4, $generationsRun, 'The 3-generation cap from setMaxIterations() must be ignored once trustTerminationCriteria() is on.');
+        $this->assertLessThan(10000, $generationsRun, 'Should stop via population collapse well before the safety ceiling, not by exhausting it.');
+        $this->assertLessThan(1e-4, $result->getBestValue(), 'Given the room to actually converge, the known minimum should be reached closely.');
+    }
 }

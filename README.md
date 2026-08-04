@@ -23,6 +23,7 @@ here once it became clear nothing about the optimization core actually depended 
   - [OptimizerAlgorithmInterface](#optimizeralgorithminterface)
   - [CallableProblem](#callableproblem)
 - [Choosing an algorithm](#choosing-an-algorithm)
+- [Early termination](#early-termination)
 - [Expressing constraints beyond a box](#expressing-constraints-beyond-a-box)
 - [Relationship to search-ranking-optimizer](#relationship-to-search-ranking-optimizer)
 - [Installation](#installation)
@@ -94,10 +95,9 @@ one shared name instead of a bespoke method per algorithm:
 - **`setStepWidth()`** — CMA-ES's initial global step size (`σ0`); Differential Evolution's mutation factor
   (`F`). Both mean "how big are the first exploratory steps."
 - **`setPopulationSize()`** — CMA-ES's `λ`; DE's population size.
-- **`setMaxIterations()`** — the upper bound every algorithm here runs generations up to. CMA-ES may stop
-  before reaching it (see [Choosing an algorithm](#choosing-an-algorithm)); DE and the Rechenberg/Schwefel
-  ES always run the full count — no fitness-plateau detection for either, simplicity over sophistication,
-  deliberately.
+- **`setMaxIterations()`** — the upper bound every algorithm here runs generations up to. All three may
+  stop before reaching it once their own convergence criteria fire (see
+  [Early termination](#early-termination)), or run the full count if those never trigger.
 
 All three are optional — skipping every setter falls back to that algorithm's own sensible default.
 Anything narrower stays a concrete, algorithm-specific method (`CmaEsAlgorithm::setInitialMean()`,
@@ -125,12 +125,6 @@ A consumer with real per-parameter names, an `Integer` dimension, or its own rep
   covariance matrix from generation to generation so it learns the search space's actual shape (correlated
   dimensions, differing sensitivities) rather than searching each one independently. Generally the
   stronger choice; some extra internal complexity (an eigendecomposition every generation) as the cost.
-  The only algorithm here with early termination: `TerminationCriteria` (Hansen's standard TolX/TolXUp/
-  ConditionCov/TolFun set) checks every generation and stops before `maxIterations` on a converged,
-  diverged, or numerically degenerate run — always on, no toggle. Deliberately not restart machinery
-  (IPOP/BIPOP-CMA-ES) on top of that: a restart resets and re-spends a caller's own evaluation-count
-  budget, a real design tradeoff rather than a strict improvement, so that stays a separate, still-open
-  decision.
 - **`RechenbergSchwefelEsAlgorithm`** — a (μ+λ)-ES: Rechenberg's isotropic Gaussian mutation plus-selection
   scheme, generalized to multiple parents/offspring the way Schwefel did, with a single scalar step size
   adapted by Rechenberg's own "1/5 success rule" instead of CMA-ES's learned covariance. The historical
@@ -144,6 +138,33 @@ A consumer with real per-parameter names, an `Integer` dimension, or its own rep
 All three are validated in this package's own test suite against standard benchmark functions with known
 optima (the sphere function, the Rosenbrock "banana" function) before ever being pointed at a real, much
 more expensive objective — see [Testing and CI](#testing-and-ci).
+
+## Early termination
+
+All three algorithms now stop before `maxIterations` when they've genuinely converged, diverged, or
+plateaued — checked every generation, always on, no toggle to disable it:
+
+| Algorithm | What's checked |
+|---|---|
+| `CmaEsAlgorithm` | Hansen's standard TolX/TolXUp/ConditionCov/TolFun set (`Internal\TerminationCriteria`) — step size collapsed, step size blew up, covariance ill-conditioned, or best-of-generation fitness plateaued over a real trailing window. |
+| `RechenbergSchwefelEsAlgorithm` | The same `TerminationCriteria`, reused as-is — it has a single scalar sigma and no covariance matrix, so TolX/TolXUp collapse to a direct check against sigma itself, and ConditionCov correctly never fires. |
+| `DifferentialEvolutionAlgorithm` | Its own criteria — no sigma or covariance to check, so its TolX-equivalent is **population convergence** (every dimension's spread across the current population has collapsed relative to that dimension's own bound range) instead, plus the same fitness-plateau idea. |
+
+**`trustTerminationCriteria()`** (algorithm-specific, call before `optimize()`, all three implement it): raises
+the effective iteration ceiling from `DEFAULT_MAX_ITERATIONS`/whatever `setMaxIterations()` was given to a
+much larger internal safety ceiling (10,000 generations), so a run is governed by its own convergence
+criteria rather than an arbitrary generation-count guess cutting it off first. Any `setMaxIterations()` call
+is ignored once this is on.
+
+This is deliberately **not** a literal unbounded loop. These criteria are the standard heuristics from
+Hansen's own tutorial and reference implementations (and this package's own equivalents for DE and the ES)
+— not a formal proof of termination for an arbitrary black-box objective. A pathological function could in
+principle satisfy none of them for a very long time. The safety ceiling stays in place as the last-resort
+circuit breaker even in this mode.
+
+Also deliberately not restart machinery (IPOP/BIPOP-CMA-ES) on top of any of this: a restart resets and
+re-spends a caller's own evaluation-count budget, a real design tradeoff rather than a strict improvement,
+so that stays a separate, still-open decision.
 
 ## Expressing constraints beyond a box
 
@@ -195,12 +216,11 @@ an algorithm, build a `Problem`, call `optimize()`.
 - **Global bounds only, no cross-dimension constraints** — see
   [Expressing constraints beyond a box](#expressing-constraints-beyond-a-box) above; anything beyond an
   independent box bound per dimension needs a reparametrization on the caller's side.
-- **A fixed iteration count is the only stopping criterion for DE and the Rechenberg/Schwefel ES.** CMA-ES
-  is the exception — it stops early on convergence/divergence/numerical degeneracy (see
-  [Choosing an algorithm](#choosing-an-algorithm)). None of the three support automatic restarts (e.g.
-  CMA-ES's own IPOP-CMA-ES variant) — deliberately, in favor of simple, reviewable reference code. Tune
-  `setMaxIterations()` for your own problem's cost/quality trade-off; it's still the effective budget for
-  DE and the ES, and the ceiling CMA-ES may or may not spend in full.
+- **None of the three support automatic restarts** (e.g. CMA-ES's own IPOP-CMA-ES variant) on top of their
+  own early termination — deliberately, in favor of simple, reviewable reference code; see
+  [Early termination](#early-termination). Early termination itself is a set of standard heuristics, not a
+  formal termination guarantee for an arbitrary objective — `trustTerminationCriteria()` still keeps a
+  real, generous safety ceiling rather than looping forever.
 - **`Integer` parameters are declared, not enforced.** `ParameterType::Integer` exists so a `Problem` can
   honestly describe an integer dimension, but no shipped algorithm currently rounds a candidate to the
   nearest integer for it — all three operate on plain continuous floats throughout.

@@ -52,9 +52,26 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
     protected const DEFAULT_MAX_ITERATIONS = 200;
 
     /**
+     * The ceiling used instead of {@see DEFAULT_MAX_ITERATIONS}/a caller's own {@see setMaxIterations()}
+     * once {@see trustTerminationCriteria()} is on -- large enough that reaching it signals something
+     * genuinely pathological about the objective (see that method's own docblock), never a normal outcome.
+     * Still a real, finite bound: {@see TerminationCriteria}'s own four criteria are the standard
+     * heuristics from Hansen's tutorial, not a formal termination guarantee for an arbitrary black-box
+     * function, so a hard ceiling stays in place even in this mode.
+     *
+     * @var int
+     */
+    protected const SAFETY_ITERATION_CEILING = 10000;
+
+    /**
      * @var array<int, float>|null
      */
     protected ?array $initialMean = null;
+
+    /**
+     * @var bool
+     */
+    protected bool $trustTerminationCriteria = false;
 
     /**
      * @var \BlackboxOptimizer\Algorithm\Internal\SymmetricEigenDecomposition
@@ -107,6 +124,30 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
     }
 
     /**
+     * Algorithm-specific setup, deliberately NOT part of {@see OptimizerAlgorithmInterface} -- call before
+     * optimize() to opt in. Switches the effective iteration ceiling from {@see DEFAULT_MAX_ITERATIONS}/
+     * whatever {@see setMaxIterations()} was given to the much larger {@see SAFETY_ITERATION_CEILING}, so
+     * a run is governed by {@see TerminationCriteria}'s own four criteria (TolX/TolXUp/ConditionCov/TolFun)
+     * deciding it's converged, diverged, or numerically degenerate -- not by an arbitrary generation-count
+     * guess cutting it off first. Any {@see setMaxIterations()} call is ignored once this is on.
+     *
+     * Deliberately not a literal unbounded loop: those four criteria are heuristics, not a formal proof of
+     * termination for an arbitrary objective (a pathological function could in principle satisfy none of
+     * them for a very long time) -- a real, if generous, ceiling stays in place as the last-resort circuit
+     * breaker. Not the shared interface's `setMaxIterations()` itself, either: DE and
+     * {@see \BlackboxOptimizer\Algorithm\RechenbergSchwefelEsAlgorithm} have their own, different escape
+     * hatches (or none) for the same idea -- see each one's own docblock.
+     *
+     * @return $this
+     */
+    public function trustTerminationCriteria(): static
+    {
+        $this->trustTerminationCriteria = true;
+
+        return $this;
+    }
+
+    /**
      * {@inheritDoc}
      *
      * "λ" (population size) falls back to Hansen's classic default (4 + floor(3 * ln(n))) when
@@ -127,7 +168,9 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
         $mean = $this->initialMean ?? $this->midpoint($lowerBounds, $upperBounds);
         $sigma = $this->stepWidth ?? static::DEFAULT_STEP_WIDTH;
         $initialSigma = $sigma;
-        $maxIterations = $this->maxIterations ?? static::DEFAULT_MAX_ITERATIONS;
+        $maxIterations = $this->trustTerminationCriteria
+            ? static::SAFETY_ITERATION_CEILING
+            : ($this->maxIterations ?? static::DEFAULT_MAX_ITERATIONS);
         $fitnessHistoryLength = $this->terminationCriteria->resolveFitnessHistoryLength($n, $strategy['lambda']);
         $recentGenerationBestValues = [];
 

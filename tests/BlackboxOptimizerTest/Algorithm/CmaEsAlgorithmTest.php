@@ -253,4 +253,31 @@ class CmaEsAlgorithmTest extends TestCase
 
         (new CmaEsAlgorithm())->setMaxIterations(0);
     }
+
+    /**
+     * A deliberately tiny setMaxIterations() (far too small to converge a 2D sphere function) is ignored
+     * once trustTerminationCriteria() is on -- the run keeps going well past it, converges close to the
+     * known minimum via TolX, and still stops well short of SAFETY_ITERATION_CEILING (proving it stopped
+     * via the criteria, not by exhausting the safety ceiling itself).
+     *
+     * @return void
+     */
+    public function testTrustTerminationCriteriaOverridesATooSmallSetMaxIterations(): void
+    {
+        // Arrange
+        $sphere = static fn (array $vector): float => $vector[0] ** 2 + $vector[1] ** 2;
+        $problem = new CallableProblem($sphere, [-5.0, -5.0], [5.0, 5.0]);
+
+        $algorithm = new CmaEsAlgorithm();
+        $algorithm->setPopulationSize(8)->setStepWidth(1.0)->setMaxIterations(3)->trustTerminationCriteria();
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert
+        $generationsRun = count($result->getBestValueHistory());
+        $this->assertGreaterThan(3, $generationsRun, 'The 3-generation cap from setMaxIterations() must be ignored once trustTerminationCriteria() is on.');
+        $this->assertLessThan(10000, $generationsRun, 'Should stop via TolX well before the safety ceiling, not by exhausting it.');
+        $this->assertLessThan(1e-6, $result->getBestValue(), 'Given the room to actually converge, the known minimum should be reached closely.');
+    }
 }

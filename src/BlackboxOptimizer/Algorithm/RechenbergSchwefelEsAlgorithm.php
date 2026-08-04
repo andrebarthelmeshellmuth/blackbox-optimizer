@@ -9,8 +9,10 @@ declare(strict_types=1);
 
 namespace BlackboxOptimizer\Algorithm;
 
+use BlackboxOptimizer\Algorithm\Internal\TerminationCriteria;
 use BlackboxOptimizer\Problem\ProblemInterface;
 use InvalidArgumentException;
+use Random\Randomizer;
 
 /**
  * A (μ+λ)-Evolution Strategy: Rechenberg's isotropic-Gaussian-mutation-plus-selection scheme, generalized
@@ -21,6 +23,13 @@ use InvalidArgumentException;
  * algorithmic shape in this namespace (isotropic mutation + success-rate step control, vs. CMA-ES's learned
  * covariance and {@see DifferentialEvolutionAlgorithm}'s vector-differential mutation), not a simplified
  * CMA-ES.
+ *
+ * Reuses {@see TerminationCriteria} exactly as-is for early termination (see {@see trustTerminationCriteria()}),
+ * passing a single-element `[1.0]` in place of CmaEsAlgorithm's per-dimension sqrt-eigenvalues array. This
+ * is not a hack: it honestly encodes "no covariance, every direction scaled identically by sigma alone" --
+ * TolX/TolXUp collapse to a direct comparison against sigma itself (correct, since sigma IS the only step
+ * length here), and ConditionCov's ratio is always exactly 1.0, so it correctly never fires (there is no
+ * covariance matrix to become ill-conditioned).
  *
  * Deliberately omits what later ES research added on top of this classic pair's own work: no recombination
  * (an offspring is a mutated copy of exactly one parent, never a blend of several — Schwefel's own later
@@ -89,9 +98,36 @@ class RechenbergSchwefelEsAlgorithm extends AbstractOptimizerAlgorithm
     protected const MIN_STEP_WIDTH = 1.0E-10;
 
     /**
+     * See {@see CmaEsAlgorithm::SAFETY_ITERATION_CEILING} -- same role, same value, same reasoning.
+     *
+     * @var int
+     */
+    protected const SAFETY_ITERATION_CEILING = 10000;
+
+    /**
      * @var int|null
      */
     protected ?int $parentCount = null;
+
+    /**
+     * @var bool
+     */
+    protected bool $trustTerminationCriteria = false;
+
+    /**
+     * @var \BlackboxOptimizer\Algorithm\Internal\TerminationCriteria
+     */
+    protected TerminationCriteria $terminationCriteria;
+
+    /**
+     * @param \Random\Randomizer|null $randomizer
+     * @param \BlackboxOptimizer\Algorithm\Internal\TerminationCriteria|null $terminationCriteria
+     */
+    public function __construct(?Randomizer $randomizer = null, ?TerminationCriteria $terminationCriteria = null)
+    {
+        parent::__construct($randomizer);
+        $this->terminationCriteria = $terminationCriteria ?? new TerminationCriteria();
+    }
 
     /**
      * Algorithm-specific setup, deliberately NOT part of {@see OptimizerAlgorithmInterface} — call before
@@ -117,6 +153,24 @@ class RechenbergSchwefelEsAlgorithm extends AbstractOptimizerAlgorithm
     }
 
     /**
+     * Algorithm-specific setup, deliberately NOT part of {@see OptimizerAlgorithmInterface} -- call before
+     * optimize() to opt in. Same role as {@see CmaEsAlgorithm::trustTerminationCriteria()}: switches the
+     * effective iteration ceiling from {@see DEFAULT_MAX_ITERATIONS}/whatever {@see setMaxIterations()}
+     * was given to {@see SAFETY_ITERATION_CEILING}, so a run is governed by {@see TerminationCriteria}
+     * deciding sigma has converged, diverged, or fitness has plateaued -- not by an arbitrary generation
+     * count. Any {@see setMaxIterations()} call is ignored once this is on. Not a literal unbounded loop
+     * for the same reason CmaEsAlgorithm's own version isn't -- see that method's docblock.
+     *
+     * @return $this
+     */
+    public function trustTerminationCriteria(): static
+    {
+        $this->trustTerminationCriteria = true;
+
+        return $this;
+    }
+
+    /**
      * {@inheritDoc}
      *
      * @param \BlackboxOptimizer\Problem\ProblemInterface $problem
@@ -129,11 +183,17 @@ class RechenbergSchwefelEsAlgorithm extends AbstractOptimizerAlgorithm
     {
         $this->resetTracking();
         [$lowerBounds, $upperBounds] = $this->extractBounds($problem);
+        $dimensionCount = count($lowerBounds);
 
         $offspringCount = $this->populationSize ?? static::DEFAULT_POPULATION_SIZE;
         $parentCount = $this->resolveParentCount($offspringCount);
         $sigma = $this->stepWidth ?? static::DEFAULT_STEP_WIDTH;
-        $maxIterations = $this->maxIterations ?? static::DEFAULT_MAX_ITERATIONS;
+        $initialSigma = $sigma;
+        $maxIterations = $this->trustTerminationCriteria
+            ? static::SAFETY_ITERATION_CEILING
+            : ($this->maxIterations ?? static::DEFAULT_MAX_ITERATIONS);
+        $fitnessHistoryLength = $this->terminationCriteria->resolveFitnessHistoryLength($dimensionCount, $offspringCount);
+        $recentGenerationBestValues = [];
 
         $parents = [];
         $parentValues = [];
@@ -158,6 +218,18 @@ class RechenbergSchwefelEsAlgorithm extends AbstractOptimizerAlgorithm
             );
 
             $this->recordGenerationHistory();
+
+            $recentGenerationBestValues[] = $parentValues[0];
+
+            if (count($recentGenerationBestValues) > $fitnessHistoryLength) {
+                array_shift($recentGenerationBestValues);
+            }
+
+            // A single-element [1.0] in place of CmaEsAlgorithm's per-dimension sqrt-eigenvalues array --
+            // see this class's own docblock for why that's a correct, not approximate, degenerate case.
+            if ($this->terminationCriteria->shouldTerminateEarly($sigma, $initialSigma, [1.0], $recentGenerationBestValues, $fitnessHistoryLength)) {
+                break;
+            }
         }
 
         return $this->buildResult();
