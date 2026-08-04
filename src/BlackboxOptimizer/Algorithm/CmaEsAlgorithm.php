@@ -107,6 +107,24 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
     }
 
     /**
+     * @return string
+     */
+    public function getName(): string
+    {
+        return 'CMA-ES';
+    }
+
+    /**
+     * @return string
+     */
+    public function getDescription(): string
+    {
+        return 'Adapts a full covariance matrix from generation to generation, learning the search '
+            . 'space\'s actual shape (correlated dimensions, differing sensitivities) rather than '
+            . 'searching each dimension independently.';
+    }
+
+    /**
      * Algorithm-specific setup, deliberately NOT part of {@see OptimizerAlgorithmInterface} — call before
      * optimize() to override the default; skipping this call entirely is fine too (the midpoint of the
      * problem's bounds is used instead, which requires every dimension to be finitely bounded).

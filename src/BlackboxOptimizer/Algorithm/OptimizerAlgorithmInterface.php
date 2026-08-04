@@ -34,6 +34,28 @@ use BlackboxOptimizer\Problem\ProblemInterface;
 interface OptimizerAlgorithmInterface
 {
     /**
+     * A short, human-readable name for this algorithm (e.g. "CMA-ES"). Factual identification only --
+     * this package stays deliberately unopinionated about which algorithm a caller "should" pick, so
+     * this is not the place for a sales pitch; see {@see getDescription()} for the same constraint.
+     *
+     * @return string
+     */
+    public function getName(): string;
+
+    /**
+     * A one- or two-sentence, factual description of what this algorithm mechanically does -- e.g. "adapts
+     * a full covariance matrix as it searches" -- not an opinion about how it compares to the others (no
+     * "generally the stronger choice" or similar framing). This package's own docblocks and README already
+     * describe each algorithm this way; this is that same factual prose made runtime-readable so a
+     * consumer (e.g. a UI built on top of this package) doesn't have to hand-copy it. Any recommendation or
+     * comparison between algorithms is scope for that consumer to add on top, not for this package, which
+     * stays deliberately generic about problem domains and consumers alike.
+     *
+     * @return string
+     */
+    public function getDescription(): string;
+
+    /**
      * @param \BlackboxOptimizer\Problem\ProblemInterface $problem
      *
      * @return \BlackboxOptimizer\Algorithm\OptimizationResult

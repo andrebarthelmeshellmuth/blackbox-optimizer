@@ -130,6 +130,24 @@ class RechenbergSchwefelEsAlgorithm extends AbstractOptimizerAlgorithm
     }
 
     /**
+     * @return string
+     */
+    public function getName(): string
+    {
+        return 'Rechenberg/Schwefel ES';
+    }
+
+    /**
+     * @return string
+     */
+    public function getDescription(): string
+    {
+        return 'A (μ+λ)-ES: isotropic Gaussian mutation plus-selection, with a single scalar step size '
+            . 'adapted by Rechenberg\'s "1/5 success rule" instead of a learned covariance matrix. Does '
+            . 'not learn correlations between dimensions.';
+    }
+
+    /**
      * Algorithm-specific setup, deliberately NOT part of {@see OptimizerAlgorithmInterface} — call before
      * optimize() to override the default; skipping this call entirely is fine too.
      *

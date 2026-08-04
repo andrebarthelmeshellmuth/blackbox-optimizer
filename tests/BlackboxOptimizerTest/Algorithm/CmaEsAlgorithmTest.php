@@ -32,6 +32,17 @@ class CmaEsAlgorithmTest extends TestCase
     /**
      * @return void
      */
+    public function testExposesFactualNameAndDescriptionMetadata(): void
+    {
+        $algorithm = new CmaEsAlgorithm();
+
+        $this->assertSame('CMA-ES', $algorithm->getName());
+        $this->assertNotSame('', $algorithm->getDescription());
+    }
+
+    /**
+     * @return void
+     */
     public function testOptimizeFindsTheKnownMinimumOfTheSphereFunction(): void
     {
         // Arrange
