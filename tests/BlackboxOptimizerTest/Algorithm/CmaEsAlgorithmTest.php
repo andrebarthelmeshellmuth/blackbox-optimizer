@@ -120,6 +120,57 @@ class CmaEsAlgorithmTest extends TestCase
     }
 
     /**
+     * TolX: a well-behaved, easily-converged problem given a generous generation budget should stop well
+     * before spending it all, once sigma has shrunk close to nothing -- proves the early-termination
+     * criteria actually fire, not just that they compile.
+     *
+     * @return void
+     */
+    public function testOptimizeStopsEarlyViaTolXOnATriviallyConvergedSphereFunction(): void
+    {
+        // Arrange
+        $sphere = static fn (array $vector): float => $vector[0] ** 2 + $vector[1] ** 2;
+        $problem = new CallableProblem($sphere, [-5.0, -5.0], [5.0, 5.0]);
+
+        $algorithm = new CmaEsAlgorithm();
+        $algorithm->setPopulationSize(8)->setStepWidth(1.0)->setMaxIterations(500);
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert
+        $this->assertLessThan(500, count($result->getBestValueHistory()), 'A trivially convergent sphere function should trigger TolX long before the 500-generation budget is spent.');
+        $this->assertLessThan(1e-6, $result->getBestValue(), 'Still converged close to the known minimum despite stopping early.');
+    }
+
+    /**
+     * TolFun: an objective whose value never changes at all should stop as soon as the fitness-history
+     * window fills, since its range is always exactly 0 -- the most direct possible trigger for this
+     * specific criterion, isolated from TolX/TolXUp/ConditionCov (sigma has no reason to move unusually
+     * here, so none of the other three would fire first).
+     *
+     * @return void
+     */
+    public function testOptimizeStopsEarlyViaTolFunOnAConstantObjective(): void
+    {
+        // Arrange
+        // phpcs:disable SlevomatCodingStandard.Functions.UnusedParameter -- the closure's signature must
+        // match ProblemInterface::evaluate()'s single array parameter; a constant objective never reads it.
+        $constant = static fn (array $vector): float => 0.0;
+        // phpcs:enable SlevomatCodingStandard.Functions.UnusedParameter
+        $problem = new CallableProblem($constant, [-5.0], [5.0]);
+
+        $algorithm = new CmaEsAlgorithm();
+        $algorithm->setPopulationSize(8)->setStepWidth(1.0)->setMaxIterations(500);
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert -- fitness history length for n=1, lambda=8 is 10 + ceil(30*1/8) = 14.
+        $this->assertLessThanOrEqual(14, count($result->getBestValueHistory()), 'A perfectly flat objective should trigger TolFun as soon as the fitness-history window fills.');
+    }
+
+    /**
      * @return void
      */
     public function testOptimizeUsesTheMidpointOfFiniteBoundsAsTheDefaultInitialMean(): void

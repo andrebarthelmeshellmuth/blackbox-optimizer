@@ -94,8 +94,10 @@ one shared name instead of a bespoke method per algorithm:
 - **`setStepWidth()`** — CMA-ES's initial global step size (`σ0`); Differential Evolution's mutation factor
   (`F`). Both mean "how big are the first exploratory steps."
 - **`setPopulationSize()`** — CMA-ES's `λ`; DE's population size.
-- **`setMaxIterations()`** — a fixed generation/iteration count, this package's only stopping criterion
-  (no fitness-plateau detection, no automatic restarts — simplicity over sophistication, deliberately).
+- **`setMaxIterations()`** — the upper bound every algorithm here runs generations up to. CMA-ES may stop
+  before reaching it (see [Choosing an algorithm](#choosing-an-algorithm)); DE and the Rechenberg/Schwefel
+  ES always run the full count — no fitness-plateau detection for either, simplicity over sophistication,
+  deliberately.
 
 All three are optional — skipping every setter falls back to that algorithm's own sensible default.
 Anything narrower stays a concrete, algorithm-specific method (`CmaEsAlgorithm::setInitialMean()`,
@@ -123,6 +125,12 @@ A consumer with real per-parameter names, an `Integer` dimension, or its own rep
   covariance matrix from generation to generation so it learns the search space's actual shape (correlated
   dimensions, differing sensitivities) rather than searching each one independently. Generally the
   stronger choice; some extra internal complexity (an eigendecomposition every generation) as the cost.
+  The only algorithm here with early termination: `TerminationCriteria` (Hansen's standard TolX/TolXUp/
+  ConditionCov/TolFun set) checks every generation and stops before `maxIterations` on a converged,
+  diverged, or numerically degenerate run — always on, no toggle. Deliberately not restart machinery
+  (IPOP/BIPOP-CMA-ES) on top of that: a restart resets and re-spends a caller's own evaluation-count
+  budget, a real design tradeoff rather than a strict improvement, so that stays a separate, still-open
+  decision.
 - **`RechenbergSchwefelEsAlgorithm`** — a (μ+λ)-ES: Rechenberg's isotropic Gaussian mutation plus-selection
   scheme, generalized to multiple parents/offspring the way Schwefel did, with a single scalar step size
   adapted by Rechenberg's own "1/5 success rule" instead of CMA-ES's learned covariance. The historical
@@ -187,10 +195,12 @@ an algorithm, build a `Problem`, call `optimize()`.
 - **Global bounds only, no cross-dimension constraints** — see
   [Expressing constraints beyond a box](#expressing-constraints-beyond-a-box) above; anything beyond an
   independent box bound per dimension needs a reparametrization on the caller's side.
-- **A fixed iteration count is the only stopping criterion.** No shipped algorithm detects a fitness
-  plateau or supports automatic restarts (e.g. CMA-ES's own IPOP-CMA-ES variant) — deliberately, in favor
-  of simple, reviewable reference code. Tune `setMaxIterations()` for your own problem's cost/quality
-  trade-off instead of relying on early stopping.
+- **A fixed iteration count is the only stopping criterion for DE and the Rechenberg/Schwefel ES.** CMA-ES
+  is the exception — it stops early on convergence/divergence/numerical degeneracy (see
+  [Choosing an algorithm](#choosing-an-algorithm)). None of the three support automatic restarts (e.g.
+  CMA-ES's own IPOP-CMA-ES variant) — deliberately, in favor of simple, reviewable reference code. Tune
+  `setMaxIterations()` for your own problem's cost/quality trade-off; it's still the effective budget for
+  DE and the ES, and the ceiling CMA-ES may or may not spend in full.
 - **`Integer` parameters are declared, not enforced.** `ParameterType::Integer` exists so a `Problem` can
   honestly describe an integer dimension, but no shipped algorithm currently rounds a candidate to the
   nearest integer for it — all three operate on plain continuous floats throughout.

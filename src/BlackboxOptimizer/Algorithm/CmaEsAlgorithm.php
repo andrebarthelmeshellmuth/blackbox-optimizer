@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace BlackboxOptimizer\Algorithm;
 
 use BlackboxOptimizer\Algorithm\Internal\SymmetricEigenDecomposition;
+use BlackboxOptimizer\Algorithm\Internal\TerminationCriteria;
 use BlackboxOptimizer\Algorithm\Internal\VectorMath;
 use BlackboxOptimizer\Problem\ProblemInterface;
 use InvalidArgumentException;
@@ -27,9 +28,16 @@ use Random\Randomizer;
  * Deliberately simple relative to a production CMA-ES: eigendecomposition happens every generation
  * (skipping the usual "only every few generations" performance optimization, unnecessary at the
  * dimensionality this package's own tests and its origin project actually use — a handful to a few dozen
- * parameters) and there is no automatic restart/IPOP machinery — a fixed generation count is the only
- * stopping criterion, matching this project's "reviewable reference code over sophistication" bias and
- * this namespace's simple generation-count stopping rule elsewhere (DifferentialEvolutionAlgorithm).
+ * parameters) and there is no automatic restart/IPOP machinery. `maxIterations` is no longer the ONLY
+ * stopping criterion, though: the standard early-termination set from Hansen's own tutorial and the
+ * purecma/pycma reference implementations (TolX, TolXUp, ConditionCov, TolFun — see
+ * {@see TerminationCriteria}) is checked every generation too, always on, no toggle. Deliberately not
+ * IPOP/BIPOP restart machinery on top of that — those change what a caller's own evaluation-count budget
+ * means (a restart resets and re-spends it), which is a real design tradeoff, not a strict improvement the
+ * way stopping early on a converged/diverged/degenerate run is; that stays a still-open, separate decision
+ * (see this package's own issue tracker), matching this project's "reviewable reference code over
+ * sophistication" bias and this namespace's simple generation-count stopping rule elsewhere
+ * (DifferentialEvolutionAlgorithm, RechenbergSchwefelEsAlgorithm).
  */
 class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
 {
@@ -54,6 +62,11 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
     protected SymmetricEigenDecomposition $eigenDecomposition;
 
     /**
+     * @var \BlackboxOptimizer\Algorithm\Internal\TerminationCriteria
+     */
+    protected TerminationCriteria $terminationCriteria;
+
+    /**
      * @var \BlackboxOptimizer\Algorithm\Internal\VectorMath
      */
     protected VectorMath $vectorMath;
@@ -62,15 +75,18 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
      * @param \BlackboxOptimizer\Algorithm\Internal\SymmetricEigenDecomposition|null $eigenDecomposition
      * @param \Random\Randomizer|null $randomizer
      * @param \BlackboxOptimizer\Algorithm\Internal\VectorMath|null $vectorMath
+     * @param \BlackboxOptimizer\Algorithm\Internal\TerminationCriteria|null $terminationCriteria
      */
     public function __construct(
         ?SymmetricEigenDecomposition $eigenDecomposition = null,
         ?Randomizer $randomizer = null,
         ?VectorMath $vectorMath = null,
+        ?TerminationCriteria $terminationCriteria = null,
     ) {
         parent::__construct($randomizer);
         $this->eigenDecomposition = $eigenDecomposition ?? new SymmetricEigenDecomposition();
         $this->vectorMath = $vectorMath ?? new VectorMath();
+        $this->terminationCriteria = $terminationCriteria ?? new TerminationCriteria();
     }
 
     /**
@@ -110,7 +126,10 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
         $strategy = $this->buildStrategyParameters($n);
         $mean = $this->initialMean ?? $this->midpoint($lowerBounds, $upperBounds);
         $sigma = $this->stepWidth ?? static::DEFAULT_STEP_WIDTH;
+        $initialSigma = $sigma;
         $maxIterations = $this->maxIterations ?? static::DEFAULT_MAX_ITERATIONS;
+        $fitnessHistoryLength = $this->terminationCriteria->resolveFitnessHistoryLength($n, $strategy['lambda']);
+        $recentGenerationBestValues = [];
 
         $covariance = $this->buildIdentity($n);
         $pathSigma = array_fill(0, $n, 0.0);
@@ -147,6 +166,16 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
             [$eigenvectors, $eigenvalues] = $this->eigenSqrt($covariance);
 
             $this->recordGenerationHistory();
+
+            $recentGenerationBestValues[] = $values[$rankedIndexes[0]];
+
+            if (count($recentGenerationBestValues) > $fitnessHistoryLength) {
+                array_shift($recentGenerationBestValues);
+            }
+
+            if ($this->terminationCriteria->shouldTerminateEarly($sigma, $initialSigma, $eigenvalues, $recentGenerationBestValues, $fitnessHistoryLength)) {
+                break;
+            }
         }
 
         return $this->buildResult();
