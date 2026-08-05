@@ -43,6 +43,36 @@ class CmaEsAlgorithmTest extends TestCase
     /**
      * @return void
      */
+    public function testEstimateEvaluationCountRequiresAnExplicitPopulationSize(): void
+    {
+        // Arrange
+        $algorithm = new CmaEsAlgorithm();
+
+        // Assert
+        $this->expectException(InvalidArgumentException::class);
+
+        // Act
+        $algorithm->estimateEvaluationCount();
+    }
+
+    /**
+     * @return void
+     */
+    public function testEstimateEvaluationCountMatchesPopulationSizeTimesMaxIterations(): void
+    {
+        // Arrange
+        $algorithm = (new CmaEsAlgorithm())->setPopulationSize(10)->setMaxIterations(50);
+
+        // Act
+        $estimate = $algorithm->estimateEvaluationCount();
+
+        // Assert
+        $this->assertSame(500, $estimate);
+    }
+
+    /**
+     * @return void
+     */
     public function testOptimizeFindsTheKnownMinimumOfTheSphereFunction(): void
     {
         // Arrange
@@ -70,6 +100,41 @@ class CmaEsAlgorithmTest extends TestCase
         foreach ($result->getBestVector() as $component) {
             $this->assertEqualsWithDelta(0.0, $component, 0.1, 'Each dimension should converge close to the known optimum at the origin.');
         }
+    }
+
+    /**
+     * estimateEvaluationCount() is an upper bound, not an exact prediction -- CMA-ES's always-on
+     * TolX/TolXUp/ConditionCov/TolFun early termination (see {@see \BlackboxOptimizer\Algorithm\Internal\TerminationCriteria})
+     * can make a real run stop before spending its full maxIterations budget. This is the guard against the
+     * two ever silently drifting apart in the other direction (a real run spending MORE than predicted).
+     *
+     * @return void
+     */
+    public function testEstimateEvaluationCountIsNeverLessThanARealRunsActualEvaluationCount(): void
+    {
+        // Arrange
+        $sphere = static function (array $vector): float {
+            $sum = 0.0;
+
+            foreach ($vector as $component) {
+                $sum += $component ** 2;
+            }
+
+            return $sum;
+        };
+
+        $problem = new CallableProblem($sphere, [-5.0, -5.0, -5.0], [5.0, 5.0, 5.0]);
+
+        $algorithm = new CmaEsAlgorithm();
+        $algorithm->setPopulationSize(12)->setStepWidth(1.0)->setMaxIterations(100);
+
+        $estimate = $algorithm->estimateEvaluationCount();
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert
+        $this->assertLessThanOrEqual($estimate, $result->getEvaluationCount());
     }
 
     /**

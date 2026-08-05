@@ -254,6 +254,25 @@ class RechenbergSchwefelEsAlgorithm extends AbstractOptimizerAlgorithm
     }
 
     /**
+     * {@inheritDoc}
+     *
+     * One {@see resolveParentCount()}-sized initial batch (the starting parent population, before the
+     * generation loop starts) plus one offspring-sized (λ) batch per generation -- see {@see optimize()},
+     * whose initial batch evaluates exactly $parentCount vectors, not $offspringCount.
+     *
+     * @return int
+     */
+    public function estimateEvaluationCount(): int
+    {
+        $offspringCount = $this->populationSize ?? static::DEFAULT_POPULATION_SIZE;
+        $maxIterations = $this->trustTerminationCriteria
+            ? static::SAFETY_ITERATION_CEILING
+            : ($this->maxIterations ?? static::DEFAULT_MAX_ITERATIONS);
+
+        return $this->resolveParentCount($offspringCount) + ($offspringCount * $maxIterations);
+    }
+
+    /**
      * @param int $offspringCount
      *
      * @throws \InvalidArgumentException
