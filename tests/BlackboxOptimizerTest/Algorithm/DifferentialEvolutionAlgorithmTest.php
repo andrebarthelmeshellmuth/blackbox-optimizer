@@ -42,6 +42,39 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
     }
 
     /**
+     * Unlike CMA-ES, DE has a fixed default population size, so estimateEvaluationCount() works even
+     * without an explicit setPopulationSize() call.
+     *
+     * @return void
+     */
+    public function testEstimateEvaluationCountFallsBackToTheDefaultPopulationSize(): void
+    {
+        // Arrange
+        $algorithm = (new DifferentialEvolutionAlgorithm())->setMaxIterations(10);
+
+        // Act
+        $estimate = $algorithm->estimateEvaluationCount();
+
+        // Assert -- DE evaluates one extra initial-population batch before its generation loop starts.
+        $this->assertSame(20 * (10 + 1), $estimate);
+    }
+
+    /**
+     * @return void
+     */
+    public function testEstimateEvaluationCountMatchesPopulationSizeTimesIterationsPlusOne(): void
+    {
+        // Arrange
+        $algorithm = (new DifferentialEvolutionAlgorithm())->setPopulationSize(30)->setMaxIterations(150);
+
+        // Act
+        $estimate = $algorithm->estimateEvaluationCount();
+
+        // Assert
+        $this->assertSame(30 * 151, $estimate);
+    }
+
+    /**
      * The n-dimensional sphere function f(x) = sum(x_i^2) has a single global minimum of 0 at the origin
      * -- the simplest possible convex benchmark, good for a basic sanity check.
      *
@@ -74,6 +107,41 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
         foreach ($result->getBestVector() as $component) {
             $this->assertEqualsWithDelta(0.0, $component, 0.1, 'Each dimension should converge close to the known optimum at the origin.');
         }
+    }
+
+    /**
+     * estimateEvaluationCount() is an upper bound -- DE's own early termination (population collapse or a
+     * flat fitness history, see {@see optimize()}) can make a real run stop before spending its full
+     * maxIterations budget. This is the guard against the two ever silently drifting apart in the other
+     * direction (a real run spending MORE than predicted).
+     *
+     * @return void
+     */
+    public function testEstimateEvaluationCountIsNeverLessThanARealRunsActualEvaluationCount(): void
+    {
+        // Arrange
+        $sphere = static function (array $vector): float {
+            $sum = 0.0;
+
+            foreach ($vector as $component) {
+                $sum += $component ** 2;
+            }
+
+            return $sum;
+        };
+
+        $problem = new CallableProblem($sphere, [-5.0, -5.0, -5.0], [5.0, 5.0, 5.0]);
+
+        $algorithm = new DifferentialEvolutionAlgorithm();
+        $algorithm->setPopulationSize(30)->setMaxIterations(150);
+
+        $estimate = $algorithm->estimateEvaluationCount();
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert
+        $this->assertLessThanOrEqual($estimate, $result->getEvaluationCount());
     }
 
     /**

@@ -231,6 +231,25 @@ class DifferentialEvolutionAlgorithm extends AbstractOptimizerAlgorithm
     }
 
     /**
+     * {@inheritDoc}
+     *
+     * One initial population-sized batch (before the generation loop starts) plus one population-sized
+     * batch per generation -- see {@see optimize()}, which evaluates the initial population separately
+     * from {@see runOneGeneration()}'s own per-generation batch.
+     *
+     * @return int
+     */
+    public function estimateEvaluationCount(): int
+    {
+        $populationSize = $this->populationSize ?? static::DEFAULT_POPULATION_SIZE;
+        $maxIterations = $this->trustTerminationCriteria
+            ? static::SAFETY_ITERATION_CEILING
+            : ($this->maxIterations ?? static::DEFAULT_MAX_ITERATIONS);
+
+        return $populationSize * ($maxIterations + 1);
+    }
+
+    /**
      * DE's own TolX-equivalent -- see this class's own docblock for why population spread, not a step
      * size, is the right thing to check here.
      *

@@ -42,6 +42,25 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
     }
 
     /**
+     * Reuses {@see \BlackboxOptimizer\Algorithm\RechenbergSchwefelEsAlgorithm::resolveParentCount()}
+     * directly, so this is really a test that estimateEvaluationCount() and optimize() are computing the
+     * initial batch size the exact same way, not two independent copies of the mu/lambda ~ 1/7 formula.
+     *
+     * @return void
+     */
+    public function testEstimateEvaluationCountMatchesParentCountPlusOffspringCountTimesIterations(): void
+    {
+        // Arrange
+        $algorithm = (new RechenbergSchwefelEsAlgorithm())->setPopulationSize(20)->setMaxIterations(200);
+
+        // Act
+        $estimate = $algorithm->estimateEvaluationCount();
+
+        // Assert -- parentCount = round(20 / 7) = 3.
+        $this->assertSame(3 + (20 * 200), $estimate);
+    }
+
+    /**
      * The n-dimensional sphere function f(x) = sum(x_i^2) has a single global minimum of 0 at the origin
      * -- the simplest possible convex benchmark, good for a basic sanity check.
      *
@@ -74,6 +93,41 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
         foreach ($result->getBestVector() as $component) {
             $this->assertEqualsWithDelta(0.0, $component, 0.2, 'Each dimension should converge close to the known optimum at the origin.');
         }
+    }
+
+    /**
+     * estimateEvaluationCount() is an upper bound -- this algorithm's own early termination (see
+     * {@see optimize()}) can make a real run stop before spending its full maxIterations budget. This is
+     * the guard against the two ever silently drifting apart in the other direction (a real run spending
+     * MORE than predicted).
+     *
+     * @return void
+     */
+    public function testEstimateEvaluationCountIsNeverLessThanARealRunsActualEvaluationCount(): void
+    {
+        // Arrange
+        $sphere = static function (array $vector): float {
+            $sum = 0.0;
+
+            foreach ($vector as $component) {
+                $sum += $component ** 2;
+            }
+
+            return $sum;
+        };
+
+        $problem = new CallableProblem($sphere, [-5.0, -5.0, -5.0], [5.0, 5.0, 5.0]);
+
+        $algorithm = new RechenbergSchwefelEsAlgorithm();
+        $algorithm->setPopulationSize(20)->setMaxIterations(200);
+
+        $estimate = $algorithm->estimateEvaluationCount();
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert
+        $this->assertLessThanOrEqual($estimate, $result->getEvaluationCount());
     }
 
     /**

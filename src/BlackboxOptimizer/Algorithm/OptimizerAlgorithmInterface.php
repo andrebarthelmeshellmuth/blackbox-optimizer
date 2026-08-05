@@ -63,6 +63,25 @@ interface OptimizerAlgorithmInterface
     public function optimize(ProblemInterface $problem): OptimizationResult;
 
     /**
+     * Predicts the total number of {@see \BlackboxOptimizer\Problem\ProblemInterface::evaluate()} calls an
+     * {@see optimize()} run will make, without actually running it -- e.g. so a caller can show a progress
+     * bar's total before the run starts. Mirrors this algorithm's own real internal evaluation-count
+     * bookkeeping (initial-population batches, an early-stopping mode's iteration ceiling, etc.) exactly,
+     * so it never drifts out of sync with what {@see optimize()} actually does. Every setter here is
+     * optional to call before {@see optimize()} because each algorithm falls back to its own sensible
+     * default; the same applies here, EXCEPT for an algorithm whose own default population size depends on
+     * the problem's dimension count (which this method, given no {@see \BlackboxOptimizer\Problem\ProblemInterface},
+     * cannot know) -- such an algorithm requires an explicit {@see setPopulationSize()} call first and
+     * throws otherwise.
+     *
+     * @throws \InvalidArgumentException When this algorithm cannot resolve a default population size
+     *   without a problem instance and {@see setPopulationSize()} was never called.
+     *
+     * @return int
+     */
+    public function estimateEvaluationCount(): int;
+
+    /**
      * @param float $stepWidth Must be greater than 0.
      *
      * @throws \InvalidArgumentException

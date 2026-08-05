@@ -85,6 +85,7 @@ interface OptimizerAlgorithmInterface
     public function getName(): string;
     public function getDescription(): string;
     public function optimize(ProblemInterface $problem): OptimizationResult;
+    public function estimateEvaluationCount(): int;
     public function setStepWidth(float $stepWidth): static;
     public function setPopulationSize(int $populationSize): static;
     public function setMaxIterations(int $maxIterations): static;
@@ -97,6 +98,17 @@ searches." Deliberately not opinionated about how the algorithms compare (no "ge
 choice") — that stays in [Choosing an algorithm](#choosing-an-algorithm) below and is scope for a consumer
 to add on top, not for this package. Meant for a consumer building a UI on top of this package (e.g. an
 algorithm picker) to read instead of hand-copying this README's prose.
+
+**`estimateEvaluationCount()`** — predicts how many `ProblemInterface::evaluate()` calls an `optimize()`
+call will make, without running it — e.g. so a caller can show a progress bar's total before a (potentially
+long-running) run starts. Mirrors each algorithm's own real internal evaluation-count bookkeeping (initial
+population batches, an early-termination mode's iteration ceiling, etc.) exactly, so a consumer never has
+to reimplement that arithmetic itself and risk it drifting out of sync with what `optimize()` actually
+does. It's an upper bound, not an exact prediction, whenever [early termination](#early-termination) is in
+play — a real run can stop before spending its full budget, never after. CMA-ES's own default population
+size is a function of the problem's dimension count, so `estimateEvaluationCount()` throws
+`InvalidArgumentException` for it unless `setPopulationSize()` was called first; the other two algorithms
+have a fixed default and don't need it.
 
 The three setters are the knobs every population-based algorithm here already has *some* version of, given
 one shared name instead of a bespoke method per algorithm:

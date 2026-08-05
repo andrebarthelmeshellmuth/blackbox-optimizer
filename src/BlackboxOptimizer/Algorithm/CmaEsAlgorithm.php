@@ -243,6 +243,35 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
     }
 
     /**
+     * {@inheritDoc}
+     *
+     * Unlike {@see DifferentialEvolutionAlgorithm}/{@see RechenbergSchwefelEsAlgorithm}, CMA-ES's own
+     * default population size (λ) is a function of the problem's dimension count -- see {@see optimize()}'s
+     * own docblock -- so it has no fixed default this method could fall back to. A {@see setPopulationSize()}
+     * call is required first.
+     *
+     * @throws \InvalidArgumentException
+     *
+     * @return int
+     */
+    public function estimateEvaluationCount(): int
+    {
+        if ($this->populationSize === null) {
+            throw new InvalidArgumentException(
+                'CMA-ES has no fixed default population size to estimate from -- its own default (λ) is a '
+                . 'function of the problem\'s dimension count, which is only known once optimize() actually '
+                . 'has a Problem. Call setPopulationSize() first.',
+            );
+        }
+
+        $maxIterations = $this->trustTerminationCriteria
+            ? static::SAFETY_ITERATION_CEILING
+            : ($this->maxIterations ?? static::DEFAULT_MAX_ITERATIONS);
+
+        return $this->populationSize * $maxIterations;
+    }
+
+    /**
      * All the (μ/μ_w, λ)-CMA-ES strategy constants, computed once per optimize() call from the dimension
      * count and (if given) the configured population size — standard formulas, see Hansen's "The CMA
      * Evolution Strategy: A Tutorial" for the derivations; not reproduced here since this is a port, not a
