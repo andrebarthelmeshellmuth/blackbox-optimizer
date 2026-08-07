@@ -19,8 +19,11 @@ use Random\Randomizer;
  * (each nullable here so a concrete algorithm can fall back to its OWN default -- including a non-scalar
  * default like CMA-ES's dimension-dependent population-size formula -- when a caller never calls the
  * setter at all), bounds extraction/clamping, a random-vector-within-bounds generator (for an initial
- * population/mean), and evaluation-count + best-so-far tracking so every concrete algorithm reports an
- * {@see OptimizationResult} the same way instead of reimplementing this per algorithm.
+ * population/mean), evaluation-count + best-so-far tracking so every concrete algorithm reports an
+ * {@see OptimizationResult} the same way instead of reimplementing this per algorithm, and the two
+ * cross-algorithm opt-ins ({@see trustTerminationCriteria()}, {@see setWarmStart()}) whose STORAGE and
+ * validation is identical everywhere even though what a concrete algorithm DOES with them differs -- see
+ * {@see CmaEsAlgorithm::resolveInitialMean()} vs. {@see seedInitialPopulation()} for the two shapes.
  */
 abstract class AbstractOptimizerAlgorithm implements OptimizerAlgorithmInterface
 {
@@ -31,6 +34,15 @@ abstract class AbstractOptimizerAlgorithm implements OptimizerAlgorithmInterface
     protected ?int $populationSize = null;
 
     protected ?int $maxIterations = null;
+
+    protected bool $trustTerminationCriteria = false;
+
+    /**
+     * @var array<int, float>|null
+     */
+    protected ?array $warmStartVector = null;
+
+    protected float $warmStartFraction = 0.0;
 
     protected int $evaluationCount = 0;
 
@@ -110,6 +122,40 @@ abstract class AbstractOptimizerAlgorithm implements OptimizerAlgorithmInterface
     }
 
     /**
+     * {@inheritDoc}
+     *
+     * @return static
+     */
+    public function trustTerminationCriteria(): static
+    {
+        $this->trustTerminationCriteria = true;
+
+        return $this;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @param array<int, float> $vector
+     * @param float $fraction
+     *
+     * @throws \InvalidArgumentException
+     *
+     * @return static
+     */
+    public function setWarmStart(array $vector, float $fraction): static
+    {
+        if ($fraction < 0.0 || $fraction > 1.0) {
+            throw new InvalidArgumentException('fraction must be between 0.0 and 1.0.');
+        }
+
+        $this->warmStartVector = $vector;
+        $this->warmStartFraction = $fraction;
+
+        return $this;
+    }
+
+    /**
      * @param \BlackboxOptimizer\Problem\ProblemInterface $problem
      *
      * @throws \InvalidArgumentException
@@ -182,6 +228,65 @@ abstract class AbstractOptimizerAlgorithm implements OptimizerAlgorithmInterface
         }
 
         return $vector;
+    }
+
+    /**
+     * Shared by every population algorithm's initial-population construction ({@see DifferentialEvolutionAlgorithm},
+     * {@see RechenbergSchwefelEsAlgorithm}): the first {@see round}($count * $warmStartFraction) members are
+     * seeded near {@see setWarmStart()}'s vector (jittered, never the literal identical point -- see
+     * {@see jitterVector()} for why more than one identical member would be actively harmful, not just
+     * redundant), the rest are this package's original {@see randomVectorWithinBounds()} draw. Falls back to
+     * fully random when {@see setWarmStart()} was never called, regardless of $jitterScale.
+     *
+     * @param int $count
+     * @param array<int, float> $lowerBounds
+     * @param array<int, float> $upperBounds
+     * @param float $jitterScale This algorithm's own resolved step width (sigma/F) -- the same unit scale
+     *   it already uses for a mutation step, so a seeded member's jitter is comparable in size to a normal
+     *   generation's own movement rather than an arbitrarily different scale.
+     *
+     * @return array<int, array<int, float>>
+     */
+    protected function seedInitialPopulation(int $count, array $lowerBounds, array $upperBounds, float $jitterScale): array
+    {
+        $warmStartCount = $this->warmStartVector !== null
+            ? (int)round($count * $this->warmStartFraction)
+            : 0;
+
+        $population = [];
+
+        for ($i = 0; $i < $count; $i++) {
+            $population[$i] = $i < $warmStartCount
+                ? $this->jitterVector($this->warmStartVector, $jitterScale, $lowerBounds, $upperBounds)
+                : $this->randomVectorWithinBounds($lowerBounds, $upperBounds);
+        }
+
+        return $population;
+    }
+
+    /**
+     * $vector plus independent N(0, $jitterScale) noise per dimension, clamped back into bounds. Never
+     * returns $vector unperturbed -- a population algorithm seeding more than one member at the exact same
+     * point would degenerate its own mechanism (e.g. Differential Evolution's a + F*(b-c) collapses to a
+     * zero step whenever two of its three picks are identical), so every seeded member needs to be a
+     * distinct point near $vector, not $vector itself.
+     *
+     * @param array<int, float> $vector
+     * @param float $jitterScale
+     * @param array<int, float> $lowerBounds
+     * @param array<int, float> $upperBounds
+     *
+     * @return array<int, float>
+     */
+    protected function jitterVector(array $vector, float $jitterScale, array $lowerBounds, array $upperBounds): array
+    {
+        $jittered = [];
+
+        foreach ($vector as $index => $value) {
+            $jittered[$index] = $value + $this->standardNormal() * $jitterScale;
+        }
+
+        return $this->clamp($jittered, $lowerBounds, $upperBounds);
     }
 
     /**

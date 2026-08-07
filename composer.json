@@ -1,7 +1,7 @@
 {
     "name": "andrebarthelmeshellmuth/blackbox-optimizer",
     "type": "library",
-    "version": "3.0.0",
+    "version": "4.0.0",
     "description": "Derivative-free, box-constrained black-box minimization for PHP: CMA-ES, a Rechenberg/Schwefel Evolution Strategy, and Differential Evolution behind one standardized interface. Framework-agnostic -- given any array<float> -> float objective function and per-dimension bounds, finds the vector that minimizes it. Extracted from spryker-community/search-ranking-optimizer, where it originally shipped as an internal, Spryker-coupled implementation detail.",
     "license": "MIT",
     "keywords": [

@@ -264,4 +264,70 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
         $this->assertLessThan(10000, $generationsRun, 'Should stop via population collapse well before the safety ceiling, not by exhausting it.');
         $this->assertLessThan(1e-4, $result->getBestValue(), 'Given the room to actually converge, the known minimum should be reached closely.');
     }
+
+    /**
+     * @return void
+     */
+    public function testSetWarmStartRejectsAFractionBelowZero(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        (new DifferentialEvolutionAlgorithm())->setWarmStart([0.0], -0.1);
+    }
+
+    /**
+     * @return void
+     */
+    public function testSetWarmStartRejectsAFractionAboveOne(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        (new DifferentialEvolutionAlgorithm())->setWarmStart([0.0], 1.1);
+    }
+
+    /**
+     * fraction=0.0 must be bit-identical to never calling setWarmStart() at all -- zero population members
+     * get seeded near the vector, so every one of them still goes through the same uniform-within-bounds
+     * draw {@see testOptimizeThrowsWhenABoundIsInfinite()} already proves is undefined for an infinite
+     * bound. If even one member had been warm-seeded instead, this would not throw.
+     *
+     * @return void
+     */
+    public function testOptimizeStillThrowsWhenABoundIsInfiniteAndWarmStartFractionIsZero(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        $problem = new CallableProblem(static fn (array $vector): float => $vector[0] ** 2, [-INF], [INF]);
+        (new DifferentialEvolutionAlgorithm())->setWarmStart([3.0], 0.0)->optimize($problem);
+    }
+
+    /**
+     * fraction=1.0 seeds the entire initial population near the warm-start vector (jittered by a tight
+     * step width). {@see \BlackboxOptimizer\Algorithm\OptimizationResult::getBestValueHistory()}'s first
+     * entry is recorded right after the initial population, before any generation runs -- so this isolates
+     * what the initial population alone found, independent of maxIterations. Placing the known optimum
+     * exactly at the warm-start vector, far from where uniform-random sampling across the full bounds would
+     * typically land, is the only way this could get so close with only the initial population evaluated.
+     *
+     * @return void
+     */
+    public function testOptimizeFullyWarmStartsTheInitialPopulationWhenFractionIsOne(): void
+    {
+        // Arrange -- a tight jitter (stepWidth) keeps every seeded member very close to (10, 10).
+        $shiftedSphere = static function (array $vector): float {
+            return ($vector[0] - 10) ** 2 + ($vector[1] - 10) ** 2;
+        };
+
+        $problem = new CallableProblem($shiftedSphere, [-100.0, -100.0], [100.0, 100.0]);
+
+        $algorithm = new DifferentialEvolutionAlgorithm();
+        $algorithm->setPopulationSize(20)->setStepWidth(0.05)->setWarmStart([10.0, 10.0], 1.0)->setMaxIterations(1);
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert
+        $history = $result->getBestValueHistory();
+        $this->assertLessThan(0.5, $history[0], 'A fully warm-started, tightly jittered initial population should already be very close to the known optimum, before any generation runs.');
+    }
 }

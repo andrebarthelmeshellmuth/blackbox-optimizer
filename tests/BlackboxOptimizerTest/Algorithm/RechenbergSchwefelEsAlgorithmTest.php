@@ -279,4 +279,68 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
         $this->assertLessThan(10000, $generationsRun, 'Should stop via the sigma-collapse criterion well before the safety ceiling, not by exhausting it.');
         $this->assertLessThan(1e-4, $result->getBestValue(), 'Given the room to actually converge, the known minimum should be reached closely.');
     }
+
+    /**
+     * @return void
+     */
+    public function testSetWarmStartRejectsAFractionBelowZero(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        (new RechenbergSchwefelEsAlgorithm())->setWarmStart([0.0], -0.1);
+    }
+
+    /**
+     * @return void
+     */
+    public function testSetWarmStartRejectsAFractionAboveOne(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        (new RechenbergSchwefelEsAlgorithm())->setWarmStart([0.0], 1.1);
+    }
+
+    /**
+     * Mirrors {@see \BlackboxOptimizerTest\Algorithm\DifferentialEvolutionAlgorithmTest::testOptimizeStillThrowsWhenABoundIsInfiniteAndWarmStartFractionIsZero()} --
+     * fraction=0.0 seeds zero parents near the vector, so every initial parent still goes through the same
+     * uniform-within-bounds draw {@see testOptimizeThrowsWhenABoundIsInfinite()} already proves is undefined
+     * for an infinite bound.
+     *
+     * @return void
+     */
+    public function testOptimizeStillThrowsWhenABoundIsInfiniteAndWarmStartFractionIsZero(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        $problem = new CallableProblem(static fn (array $vector): float => $vector[0] ** 2, [-INF], [INF]);
+        (new RechenbergSchwefelEsAlgorithm())->setWarmStart([3.0], 0.0)->optimize($problem);
+    }
+
+    /**
+     * Mirrors {@see \BlackboxOptimizerTest\Algorithm\DifferentialEvolutionAlgorithmTest::testOptimizeFullyWarmStartsTheInitialPopulationWhenFractionIsOne()} --
+     * fraction=1.0 seeds every initial parent near the warm-start vector (jittered by a tight step width /
+     * sigma). getBestValueHistory()'s first entry is recorded right after the initial parents, before any
+     * generation runs, isolating what the initial parent population alone found.
+     *
+     * @return void
+     */
+    public function testOptimizeFullyWarmStartsTheInitialParentsWhenFractionIsOne(): void
+    {
+        // Arrange -- a tight jitter (stepWidth/sigma) keeps every seeded parent very close to (10, 10).
+        $shiftedSphere = static function (array $vector): float {
+            return ($vector[0] - 10) ** 2 + ($vector[1] - 10) ** 2;
+        };
+
+        $problem = new CallableProblem($shiftedSphere, [-100.0, -100.0], [100.0, 100.0]);
+
+        $algorithm = new RechenbergSchwefelEsAlgorithm();
+        $algorithm->setPopulationSize(20)->setStepWidth(0.05)->setWarmStart([10.0, 10.0], 1.0)->setMaxIterations(1);
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert
+        $history = $result->getBestValueHistory();
+        $this->assertLessThan(0.5, $history[0], 'A fully warm-started, tightly jittered initial parent population should already be close to the known optimum, before any generation runs.');
+    }
 }

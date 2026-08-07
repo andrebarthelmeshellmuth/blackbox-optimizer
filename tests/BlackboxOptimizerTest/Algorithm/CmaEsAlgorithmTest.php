@@ -356,4 +356,166 @@ class CmaEsAlgorithmTest extends TestCase
         $this->assertLessThan(10000, $generationsRun, 'Should stop via TolX well before the safety ceiling, not by exhausting it.');
         $this->assertLessThan(1e-6, $result->getBestValue(), 'Given the room to actually converge, the known minimum should be reached closely.');
     }
+
+    /**
+     * @return void
+     */
+    public function testSetWarmStartRejectsAFractionBelowZero(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        (new CmaEsAlgorithm())->setWarmStart([0.0], -0.1);
+    }
+
+    /**
+     * @return void
+     */
+    public function testSetWarmStartRejectsAFractionAboveOne(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        (new CmaEsAlgorithm())->setWarmStart([0.0], 1.1);
+    }
+
+    /**
+     * fraction=0.0 must be bit-identical to never calling setWarmStart() at all -- reuses
+     * {@see testOptimizeUsesTheMidpointOfFiniteBoundsAsTheDefaultInitialMean()}'s own technique: the
+     * warm-start vector points at a completely different location, so if it had any effect at all, this
+     * tiny one-generation budget could not possibly land close to the midpoint optimum.
+     *
+     * @return void
+     */
+    public function testOptimizeIgnoresWarmStartWhenFractionIsZero(): void
+    {
+        // Arrange
+        $shiftedSphere = static function (array $vector): float {
+            return ($vector[0] - 10) ** 2 + ($vector[1] - 10) ** 2;
+        };
+
+        $problem = new CallableProblem($shiftedSphere, [5.0, 5.0], [15.0, 15.0]);
+
+        $algorithm = new CmaEsAlgorithm();
+        $algorithm->setPopulationSize(4)->setStepWidth(0.1)->setWarmStart([-1000.0, -1000.0], 0.0)->setMaxIterations(1);
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert
+        $this->assertLessThan(1.0, $result->getBestValue(), 'fraction=0.0 must leave the bounds-midpoint default fully in effect.');
+    }
+
+    /**
+     * fraction=1.0 is the special-cased "skip the midpoint entirely" branch of
+     * {@see \BlackboxOptimizer\Algorithm\CmaEsAlgorithm::resolveInitialMean()} -- placing the known optimum
+     * exactly at the warm-start vector (far from the bounds' own midpoint) and giving only a single,
+     * tiny-step generation means only a run that actually started AT that vector could land this close.
+     *
+     * @return void
+     */
+    public function testOptimizeFullyWarmStartsTheInitialMeanWhenFractionIsOne(): void
+    {
+        // Arrange -- bounds midpoint is (0, 0); the warm-start vector and the known optimum are both (10, 10).
+        $shiftedSphere = static function (array $vector): float {
+            return ($vector[0] - 10) ** 2 + ($vector[1] - 10) ** 2;
+        };
+
+        $problem = new CallableProblem($shiftedSphere, [-10.0, -10.0], [10.0, 10.0]);
+
+        $algorithm = new CmaEsAlgorithm();
+        $algorithm->setPopulationSize(4)->setStepWidth(0.1)->setWarmStart([10.0, 10.0], 1.0)->setMaxIterations(1);
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert
+        $this->assertLessThan(1.0, $result->getBestValue(), 'fraction=1.0 should start the mean at the warm-start vector, not the bounds\' midpoint.');
+    }
+
+    /**
+     * A fraction strictly between 0 and 1 linearly blends the initial mean between the bounds' midpoint and
+     * the warm-start vector -- placing the known optimum exactly at that predicted blend point (not at
+     * either endpoint) is the only way a tiny, one-generation budget could land close to it.
+     *
+     * @return void
+     */
+    public function testOptimizeBlendsTheInitialMeanTowardTheWarmStartVectorByFraction(): void
+    {
+        // Arrange -- bounds midpoint is (0, 0); warm-start vector is (10, 10); fraction=0.5 blends to (5, 5).
+        $blendedOptimum = static function (array $vector): float {
+            return ($vector[0] - 5) ** 2 + ($vector[1] - 5) ** 2;
+        };
+
+        $problem = new CallableProblem($blendedOptimum, [-10.0, -10.0], [10.0, 10.0]);
+
+        $algorithm = new CmaEsAlgorithm();
+        $algorithm->setPopulationSize(4)->setStepWidth(0.1)->setWarmStart([10.0, 10.0], 0.5)->setMaxIterations(1);
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert
+        $this->assertLessThan(1.0, $result->getBestValue(), 'fraction=0.5 should start the mean exactly halfway between the bounds\' midpoint and the warm-start vector.');
+    }
+
+    /**
+     * An explicit {@see \BlackboxOptimizer\Algorithm\CmaEsAlgorithm::setInitialMean()} call names an exact
+     * point, which is more specific than {@see \BlackboxOptimizer\Algorithm\CmaEsAlgorithm::setWarmStart()}'s
+     * own blend -- it must win outright, not be blended with it. The warm-start vector here points far away
+     * from the known optimum, so only ignoring it entirely could land this close.
+     *
+     * @return void
+     */
+    public function testSetInitialMeanTakesPrecedenceOverSetWarmStart(): void
+    {
+        // Arrange
+        $sphere = static fn (array $vector): float => $vector[0] ** 2;
+        $problem = new CallableProblem($sphere, [-10.0], [10.0]);
+
+        $algorithm = new CmaEsAlgorithm();
+        $algorithm->setPopulationSize(4)->setStepWidth(0.05)->setWarmStart([-1000.0], 1.0)->setInitialMean([0.0])->setMaxIterations(1);
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert
+        $this->assertLessThan(1.0, $result->getBestValue(), 'An explicit setInitialMean() must win over setWarmStart(), not be blended with it.');
+    }
+
+    /**
+     * Mirrors {@see testOptimizeAcceptsAnExplicitInitialMeanForAnUnboundedDimension()}: fraction=1.0 must
+     * skip {@see \BlackboxOptimizer\Algorithm\CmaEsAlgorithm::midpoint()} entirely (not just multiply its
+     * contribution by zero), since midpoint() itself throws for an infinite bound.
+     *
+     * @return void
+     */
+    public function testOptimizeAcceptsAFullWarmStartForAnUnboundedDimension(): void
+    {
+        // Arrange
+        $sphere = static fn (array $vector): float => $vector[0] ** 2;
+        $problem = new CallableProblem($sphere, [-INF], [INF]);
+
+        $algorithm = new CmaEsAlgorithm();
+        $algorithm->setPopulationSize(8)->setStepWidth(1.0)->setWarmStart([3.0], 1.0)->setMaxIterations(60);
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert
+        $this->assertLessThan(1e-3, $result->getBestValue());
+    }
+
+    /**
+     * Confirms the {@see \BlackboxOptimizer\Algorithm\CmaEsAlgorithm::midpoint()}-skip really is special-cased
+     * at exactly fraction=1.0, not "any nonzero fraction" -- a blend still needs the midpoint, which is
+     * undefined for an infinite bound.
+     *
+     * @return void
+     */
+    public function testOptimizeStillThrowsWhenWarmStartFractionIsBelowOneAndABoundIsInfinite(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        $problem = new CallableProblem(static fn (array $vector): float => $vector[0] ** 2, [-INF], [INF]);
+        (new CmaEsAlgorithm())->setWarmStart([3.0], 0.5)->optimize($problem);
+    }
 }

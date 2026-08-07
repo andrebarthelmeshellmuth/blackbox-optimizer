@@ -24,6 +24,7 @@ here once it became clear nothing about the optimization core actually depended 
   - [CallableProblem](#callableproblem)
 - [Choosing an algorithm](#choosing-an-algorithm)
 - [Early termination](#early-termination)
+- [Warm start](#warm-start)
 - [Expressing constraints beyond a box](#expressing-constraints-beyond-a-box)
 - [Relationship to search-ranking-optimizer](#relationship-to-search-ranking-optimizer)
 - [Installation](#installation)
@@ -86,6 +87,8 @@ interface OptimizerAlgorithmInterface
     public function getDescription(): string;
     public function optimize(ProblemInterface $problem): OptimizationResult;
     public function estimateEvaluationCount(): int;
+    public function trustTerminationCriteria(): static;
+    public function setWarmStart(array $vector, float $fraction): static;
     public function setStepWidth(float $stepWidth): static;
     public function setPopulationSize(int $populationSize): static;
     public function setMaxIterations(int $maxIterations): static;
@@ -110,7 +113,14 @@ size is a function of the problem's dimension count, so `estimateEvaluationCount
 `InvalidArgumentException` for it unless `setPopulationSize()` was called first; the other two algorithms
 have a fixed default and don't need it.
 
-The three setters are the knobs every population-based algorithm here already has *some* version of, given
+**`trustTerminationCriteria()`** — opts into each algorithm's own convergence/divergence/plateau detection
+instead of a fixed `setMaxIterations()` budget; see [Early termination](#early-termination) for the full
+per-algorithm detail.
+
+**`setWarmStart()`** — seeds the search from an existing point instead of starting cold; see
+[Warm start](#warm-start) for the full per-algorithm detail.
+
+The three setters below are the knobs every population-based algorithm here already has *some* version of, given
 one shared name instead of a bespoke method per algorithm:
 
 - **`setStepWidth()`** — CMA-ES's initial global step size (`σ0`); Differential Evolution's mutation factor
@@ -171,11 +181,12 @@ plateaued — checked every generation, always on, no toggle to disable it:
 | `RechenbergSchwefelEsAlgorithm` | The same `TerminationCriteria`, reused as-is — it has a single scalar sigma and no covariance matrix, so TolX/TolXUp collapse to a direct check against sigma itself, and ConditionCov correctly never fires. |
 | `DifferentialEvolutionAlgorithm` | Its own criteria — no sigma or covariance to check, so its TolX-equivalent is **population convergence** (every dimension's spread across the current population has collapsed relative to that dimension's own bound range) instead, plus the same fitness-plateau idea. |
 
-**`trustTerminationCriteria()`** (algorithm-specific, call before `optimize()`, all three implement it): raises
+**`trustTerminationCriteria()`** (part of `OptimizerAlgorithmInterface`, call before `optimize()`): raises
 the effective iteration ceiling from `DEFAULT_MAX_ITERATIONS`/whatever `setMaxIterations()` was given to a
 much larger internal safety ceiling (10,000 generations), so a run is governed by its own convergence
 criteria rather than an arbitrary generation-count guess cutting it off first. Any `setMaxIterations()` call
-is ignored once this is on.
+is ignored once this is on. `estimateEvaluationCount()` reflects that ceiling once this is on, not a
+realistic prediction — a run that actually converges stops far short of it.
 
 This is deliberately **not** a literal unbounded loop. These criteria are the standard heuristics from
 Hansen's own tutorial and reference implementations (and this package's own equivalents for DE and the ES)
@@ -186,6 +197,30 @@ circuit breaker even in this mode.
 Also deliberately not restart machinery (IPOP/BIPOP-CMA-ES) on top of any of this: a restart resets and
 re-spends a caller's own evaluation-count budget, a real design tradeoff rather than a strict improvement,
 so that stays a separate, still-open decision.
+
+## Warm start
+
+```php
+$algorithm->setWarmStart($vector, $fraction);
+```
+
+Seeds the search from an existing point instead of starting cold — e.g. a shop's currently-live
+configuration, when the goal is "does a change help from here" rather than "what's the best configuration
+from scratch." `$fraction=0.0` (the default; never calling this at all is identical) leaves every algorithm's
+original from-scratch behavior untouched.
+
+Each algorithm interprets `$vector`/`$fraction` according to its own shape, the same design already used for
+`setStepWidth()` (`σ0` for CMA-ES/the ES, `F` for DE) rather than one literal shared mechanism:
+
+| Algorithm | What `setWarmStart()` does |
+|---|---|
+| `CmaEsAlgorithm` | Has exactly one starting point (its mean). Blends it linearly toward `$vector`: `initialMean = fraction * $vector + (1 - fraction) * midpoint(bounds)`. `$fraction=1.0` is special-cased to skip the midpoint calculation entirely, so a warm start still works when a dimension is infinitely bounded (where the midpoint itself is undefined). An explicit `CmaEsAlgorithm::setInitialMean()` call names an exact point and always wins over `setWarmStart()`, rather than being blended with it. |
+| `DifferentialEvolutionAlgorithm` / `RechenbergSchwefelEsAlgorithm` | Have a whole population, not one mean. `round(populationSize * fraction)` of the initial population is seeded near `$vector` — perturbed by Gaussian jitter scaled to that algorithm's own resolved step width, never the literal identical point. The rest is drawn the normal, fully-random way. Seeding more than one population member at the exact same point would degenerate the algorithm's own mechanism (DE's `a + F * (b - c)` mutation collapses to a zero step whenever two of its three picks are identical), so jitter is not an approximation here — it's required for the algorithm to keep working at all. |
+
+A higher fraction converges faster when `$vector` is already a good starting point, at the cost of a higher
+chance of settling into a local optimum near it instead of finding a better region elsewhere — the same
+explore/exploit tradeoff `$fraction` exists to let a caller dial in, rather than this package picking one
+default that's implicitly a global-exploration run every time.
 
 ## Expressing constraints beyond a box
 
