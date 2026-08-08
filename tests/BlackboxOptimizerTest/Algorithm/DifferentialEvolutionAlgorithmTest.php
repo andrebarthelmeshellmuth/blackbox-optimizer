@@ -14,6 +14,7 @@ use BlackboxOptimizer\Algorithm\OptimizerAlgorithmInterface;
 use BlackboxOptimizer\Problem\CallableProblem;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 
 /**
  * Validates against known toy benchmark functions (sphere, Rosenbrock) with known optima, per this
@@ -266,6 +267,41 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
     }
 
     /**
+     * DE's own TolFun-equivalent ({@see \BlackboxOptimizer\Algorithm\DifferentialEvolutionAlgorithm::hasFlatFitnessHistory()})
+     * is a local reimplementation, not shared with {@see \BlackboxOptimizer\Algorithm\Internal\TerminationCriteria}
+     * (see this class's own docblock for why) -- the population-collapse test above never exercises it,
+     * since a converging sphere's population collapses in SPACE well before its fitness history could ever
+     * flatten first. A perfectly constant objective isolates the opposite: every candidate scores identically
+     * regardless of position, so a trial vector is never strictly better than its target and the population
+     * itself never changes generation to generation -- spread stays exactly whatever the initial random draw
+     * produced (not collapsed), while the best-value history is 0.0 from the very first generation, hitting
+     * the flat-fitness window as soon as it fills.
+     *
+     * @return void
+     */
+    public function testOptimizeStopsEarlyViaTolFunOnAConstantObjective(): void
+    {
+        // Arrange
+        // phpcs:disable SlevomatCodingStandard.Functions.UnusedParameter -- the closure's signature must
+        // match ProblemInterface::evaluate()'s single array parameter; a constant objective never reads it.
+        $constant = static fn (array $vector): float => 0.0;
+        // phpcs:enable SlevomatCodingStandard.Functions.UnusedParameter
+        $problem = new CallableProblem($constant, [-5.0], [5.0]);
+
+        $algorithm = new DifferentialEvolutionAlgorithm();
+        $algorithm->setPopulationSize(8)->setMaxIterations(500);
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert -- fitness history length for n=1, lambda=8 is 10 + ceil(30*1/8) = 14 (same formula
+        // TerminationCriteria::resolveFitnessHistoryLength() uses, reused as-is by this class), plus the
+        // initial-population entry recorded before the generation loop even starts (see
+        // testTrustTerminationCriteriaOverridesATooSmallSetMaxIterations() above for the same +1).
+        $this->assertLessThanOrEqual(15, count($result->getBestValueHistory()), 'A perfectly flat objective should trigger the fitness-plateau check as soon as the history window fills.');
+    }
+
+    /**
      * @return void
      */
     public function testSetWarmStartRejectsAFractionBelowZero(): void
@@ -329,5 +365,47 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
         // Assert
         $history = $result->getBestValueHistory();
         $this->assertLessThan(0.5, $history[0], 'A fully warm-started, tightly jittered initial population should already be very close to the known optimum, before any generation runs.');
+    }
+
+    /**
+     * The extremes (fraction=0.0, fraction=1.0) are already proven above, but the actual split arithmetic
+     * -- {@see \BlackboxOptimizer\Algorithm\AbstractOptimizerAlgorithm::seedInitialPopulation()}'s
+     * `(int)round($count * $warmStartFraction)` -- is shared with
+     * {@see \BlackboxOptimizerTest\Algorithm\RechenbergSchwefelEsAlgorithmTest::testSeedInitialPopulationSplitsExactlyByWarmStartFractionAtAPartialFraction()}
+     * and never exercised at a real fraction in between, where a rounding/off-by-one bug would actually be
+     * visible. An outcome-based test (an optimize() run's best value) can't isolate this cleanly: even a
+     * handful of tightly-jittered warm members already pulls the population-wide best value close to the
+     * warm-start vector regardless of whether the true split is 20% or 80%, so a wrong count could still
+     * pass. Calling the shared, inherited seeding method directly and counting how many of its own returned
+     * vectors actually land near the vector is the only way to pin down the exact count, not just "some
+     * did."
+     *
+     * @return void
+     */
+    public function testSeedInitialPopulationSplitsExactlyByWarmStartFractionAtAPartialFraction(): void
+    {
+        // Arrange -- bounds are huge relative to the jitter scale, so a member seeded via the random path
+        // has a negligible chance of accidentally landing within the warm-detection radius below.
+        $algorithm = new DifferentialEvolutionAlgorithm();
+        $algorithm->setWarmStart([10.0, 10.0], 0.3);
+
+        $seedInitialPopulation = new ReflectionMethod($algorithm, 'seedInitialPopulation');
+        $seedInitialPopulation->setAccessible(true);
+
+        // Act -- round(20 * 0.3) = 6 members expected near the vector, jitterScale=0.01 keeps them tight.
+        $population = $seedInitialPopulation->invoke($algorithm, 20, [-1000.0, -1000.0], [1000.0, 1000.0], 0.01);
+
+        // Assert
+        $warmCount = 0;
+
+        foreach ($population as $vector) {
+            $distanceFromWarmVector = sqrt(($vector[0] - 10.0) ** 2 + ($vector[1] - 10.0) ** 2);
+
+            if ($distanceFromWarmVector < 1.0) {
+                $warmCount++;
+            }
+        }
+
+        $this->assertSame(6, $warmCount, 'fraction=0.3 of a population of 20 should seed exactly round(20 * 0.3) = 6 members near the warm-start vector, not merely "some".');
     }
 }
