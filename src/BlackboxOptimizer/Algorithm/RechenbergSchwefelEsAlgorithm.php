@@ -110,11 +110,6 @@ class RechenbergSchwefelEsAlgorithm extends AbstractOptimizerAlgorithm
     protected ?int $parentCount = null;
 
     /**
-     * @var bool
-     */
-    protected bool $trustTerminationCriteria = false;
-
-    /**
      * @var \BlackboxOptimizer\Algorithm\Internal\TerminationCriteria
      */
     protected TerminationCriteria $terminationCriteria;
@@ -171,24 +166,6 @@ class RechenbergSchwefelEsAlgorithm extends AbstractOptimizerAlgorithm
     }
 
     /**
-     * Algorithm-specific setup, deliberately NOT part of {@see OptimizerAlgorithmInterface} -- call before
-     * optimize() to opt in. Same role as {@see CmaEsAlgorithm::trustTerminationCriteria()}: switches the
-     * effective iteration ceiling from {@see DEFAULT_MAX_ITERATIONS}/whatever {@see setMaxIterations()}
-     * was given to {@see SAFETY_ITERATION_CEILING}, so a run is governed by {@see TerminationCriteria}
-     * deciding sigma has converged, diverged, or fitness has plateaued -- not by an arbitrary generation
-     * count. Any {@see setMaxIterations()} call is ignored once this is on. Not a literal unbounded loop
-     * for the same reason CmaEsAlgorithm's own version isn't -- see that method's docblock.
-     *
-     * @return $this
-     */
-    public function trustTerminationCriteria(): static
-    {
-        $this->trustTerminationCriteria = true;
-
-        return $this;
-    }
-
-    /**
      * {@inheritDoc}
      *
      * @param \BlackboxOptimizer\Problem\ProblemInterface $problem
@@ -213,13 +190,11 @@ class RechenbergSchwefelEsAlgorithm extends AbstractOptimizerAlgorithm
         $fitnessHistoryLength = $this->terminationCriteria->resolveFitnessHistoryLength($dimensionCount, $offspringCount);
         $recentGenerationBestValues = [];
 
-        $parents = [];
+        $parents = $this->seedInitialPopulation($parentCount, $lowerBounds, $upperBounds, $sigma);
         $parentValues = [];
 
-        for ($i = 0; $i < $parentCount; $i++) {
-            $vector = $this->randomVectorWithinBounds($lowerBounds, $upperBounds);
-            $parents[$i] = $vector;
-            $parentValues[$i] = $this->evaluate($problem, $vector);
+        foreach ($parents as $index => $vector) {
+            $parentValues[$index] = $this->evaluate($problem, $vector);
         }
 
         $this->recordGenerationHistory();

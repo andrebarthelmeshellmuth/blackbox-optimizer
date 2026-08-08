@@ -69,11 +69,6 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
     protected ?array $initialMean = null;
 
     /**
-     * @var bool
-     */
-    protected bool $trustTerminationCriteria = false;
-
-    /**
      * @var \BlackboxOptimizer\Algorithm\Internal\SymmetricEigenDecomposition
      */
     protected SymmetricEigenDecomposition $eigenDecomposition;
@@ -130,37 +125,16 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
      * problem's bounds is used instead, which requires every dimension to be finitely bounded).
      *
      * @param array<int, float>|null $initialMean Starting point "m0", same length/order as the problem's
-     *   parameters. Null (the default) uses the midpoint of the problem's own bounds at optimize() time.
+     *   parameters. Null (the default) falls back to {@see setWarmStart()}'s own blend when one was given,
+     *   or the midpoint of the problem's own bounds otherwise -- see {@see resolveInitialMean()}. An
+     *   explicit call here always wins over {@see setWarmStart()}: it names an exact point, which is more
+     *   specific than a blend fraction.
      *
      * @return $this
      */
     public function setInitialMean(?array $initialMean): static
     {
         $this->initialMean = $initialMean;
-
-        return $this;
-    }
-
-    /**
-     * Algorithm-specific setup, deliberately NOT part of {@see OptimizerAlgorithmInterface} -- call before
-     * optimize() to opt in. Switches the effective iteration ceiling from {@see DEFAULT_MAX_ITERATIONS}/
-     * whatever {@see setMaxIterations()} was given to the much larger {@see SAFETY_ITERATION_CEILING}, so
-     * a run is governed by {@see TerminationCriteria}'s own four criteria (TolX/TolXUp/ConditionCov/TolFun)
-     * deciding it's converged, diverged, or numerically degenerate -- not by an arbitrary generation-count
-     * guess cutting it off first. Any {@see setMaxIterations()} call is ignored once this is on.
-     *
-     * Deliberately not a literal unbounded loop: those four criteria are heuristics, not a formal proof of
-     * termination for an arbitrary objective (a pathological function could in principle satisfy none of
-     * them for a very long time) -- a real, if generous, ceiling stays in place as the last-resort circuit
-     * breaker. Not the shared interface's `setMaxIterations()` itself, either: DE and
-     * {@see \BlackboxOptimizer\Algorithm\RechenbergSchwefelEsAlgorithm} have their own, different escape
-     * hatches (or none) for the same idea -- see each one's own docblock.
-     *
-     * @return $this
-     */
-    public function trustTerminationCriteria(): static
-    {
-        $this->trustTerminationCriteria = true;
 
         return $this;
     }
@@ -183,7 +157,7 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
         $n = count($lowerBounds);
 
         $strategy = $this->buildStrategyParameters($n);
-        $mean = $this->initialMean ?? $this->midpoint($lowerBounds, $upperBounds);
+        $mean = $this->initialMean ?? $this->resolveInitialMean($lowerBounds, $upperBounds);
         $sigma = $this->stepWidth ?? static::DEFAULT_STEP_WIDTH;
         $initialSigma = $sigma;
         $maxIterations = $this->trustTerminationCriteria
@@ -339,6 +313,38 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
         }
 
         return $mean;
+    }
+
+    /**
+     * CMA-ES's own interpretation of {@see setWarmStart()}: unlike the population algorithms, CMA-ES only
+     * has ONE starting point to place, so "fraction" blends it linearly toward {@see midpoint()} instead of
+     * seeding a subset of a population. $fraction=1.0 is special-cased to skip {@see midpoint()} entirely
+     * (not just multiply its contribution by zero) so a warm start still works when a dimension is
+     * infinitely bounded, which {@see midpoint()} itself would otherwise reject outright.
+     *
+     * @param array<int, float> $lowerBounds
+     * @param array<int, float> $upperBounds
+     *
+     * @throws \InvalidArgumentException
+     *
+     * @return array<int, float>
+     */
+    protected function resolveInitialMean(array $lowerBounds, array $upperBounds): array
+    {
+        if ($this->warmStartVector === null || $this->warmStartFraction <= 0.0) {
+            return $this->midpoint($lowerBounds, $upperBounds);
+        }
+
+        if ($this->warmStartFraction >= 1.0) {
+            return $this->warmStartVector;
+        }
+
+        $midpoint = $this->midpoint($lowerBounds, $upperBounds);
+
+        return $this->vectorMath->addVectors(
+            $this->vectorMath->scaleVector($this->warmStartVector, $this->warmStartFraction),
+            $this->vectorMath->scaleVector($midpoint, 1 - $this->warmStartFraction),
+        );
     }
 
     /**

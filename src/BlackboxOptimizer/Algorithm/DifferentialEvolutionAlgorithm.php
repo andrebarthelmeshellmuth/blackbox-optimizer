@@ -92,11 +92,6 @@ class DifferentialEvolutionAlgorithm extends AbstractOptimizerAlgorithm
     protected float $crossoverProbability = self::DEFAULT_CROSSOVER_PROBABILITY;
 
     /**
-     * @var bool
-     */
-    protected bool $trustTerminationCriteria = false;
-
-    /**
      * @var \BlackboxOptimizer\Algorithm\Internal\TerminationCriteria
      */
     protected TerminationCriteria $terminationCriteria;
@@ -151,25 +146,6 @@ class DifferentialEvolutionAlgorithm extends AbstractOptimizerAlgorithm
     }
 
     /**
-     * Algorithm-specific setup, deliberately NOT part of {@see OptimizerAlgorithmInterface} -- call before
-     * optimize() to opt in. Same role as {@see CmaEsAlgorithm::trustTerminationCriteria()}: switches the
-     * effective iteration ceiling from {@see DEFAULT_MAX_ITERATIONS}/whatever {@see setMaxIterations()}
-     * was given to {@see SAFETY_ITERATION_CEILING}, so a run is governed by the population having
-     * genuinely converged or its fitness having plateaued (see this class's own docblock for how DE's
-     * criteria differ from CmaEsAlgorithm's) -- not by an arbitrary generation count. Any
-     * {@see setMaxIterations()} call is ignored once this is on. Not a literal unbounded loop for the same
-     * reason CmaEsAlgorithm's own version isn't -- see that method's docblock.
-     *
-     * @return $this
-     */
-    public function trustTerminationCriteria(): static
-    {
-        $this->trustTerminationCriteria = true;
-
-        return $this;
-    }
-
-    /**
      * {@inheritDoc}
      *
      * @param \BlackboxOptimizer\Problem\ProblemInterface $problem
@@ -190,13 +166,11 @@ class DifferentialEvolutionAlgorithm extends AbstractOptimizerAlgorithm
         $fitnessHistoryLength = $this->terminationCriteria->resolveFitnessHistoryLength($dimensionCount, $populationSize);
         $recentGenerationBestValues = [];
 
-        $population = [];
+        $population = $this->seedInitialPopulation($populationSize, $lowerBounds, $upperBounds, $mutationFactor);
         $populationValues = [];
 
-        for ($i = 0; $i < $populationSize; $i++) {
-            $vector = $this->randomVectorWithinBounds($lowerBounds, $upperBounds);
-            $population[$i] = $vector;
-            $populationValues[$i] = $this->evaluate($problem, $vector);
+        foreach ($population as $index => $vector) {
+            $populationValues[$index] = $this->evaluate($problem, $vector);
         }
 
         $this->recordGenerationHistory();

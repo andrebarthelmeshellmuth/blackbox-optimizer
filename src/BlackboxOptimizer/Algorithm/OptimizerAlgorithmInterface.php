@@ -17,12 +17,20 @@ use BlackboxOptimizer\Problem\ProblemInterface;
  * given a {@see ProblemInterface} (its parameter list plus a way to score any point in it), find the
  * vector that minimizes it.
  *
- * The three setters below are the knobs every population-based algorithm in this package already has SOME
+ * The setters below are the knobs every population-based algorithm in this package already has SOME
  * version of, given one shared name instead of a bespoke method per algorithm:
  * - setStepWidth(): CMA-ES's initial global step size (sigma_0); Differential Evolution's mutation
  *   factor (F) -- both mean "how big are the first exploratory steps."
  * - setPopulationSize(): CMA-ES's lambda; DE's population size.
- * - setMaxIterations(): a fixed generation/iteration count, this package's only stopping criterion.
+ * - setMaxIterations(): a fixed generation/iteration count, this package's default stopping criterion.
+ * - trustTerminationCriteria(): opts into each algorithm's own convergence/divergence/plateau detection
+ *   (see each concrete class's own docblock for its specific criteria) instead of a fixed
+ *   {@see setMaxIterations()} budget, subject to a generous algorithm-specific safety ceiling.
+ * - setWarmStart(): seeds the search from an existing point instead of starting cold. CMA-ES blends its
+ *   single starting mean toward the given vector by $fraction; the population algorithms (DE, the
+ *   Rechenberg/Schwefel ES) seed that fraction of their initial population near the given vector (with
+ *   jitter -- never the literal identical point more than once, which would collapse a
+ *   differential/mutation step to zero) and the rest randomly within bounds, same as $fraction=0.0 today.
  *
  * Anything narrower than that stays a concrete, algorithm-specific method on the concrete class (e.g.
  * CmaEsAlgorithm::setInitialMean(), DifferentialEvolutionAlgorithm::setCrossoverProbability()) rather than
@@ -80,6 +88,38 @@ interface OptimizerAlgorithmInterface
      * @return int
      */
     public function estimateEvaluationCount(): int;
+
+    /**
+     * Switches from the fixed {@see setMaxIterations()} budget (this package's default) to trusting each
+     * algorithm's own convergence/divergence/plateau detection instead -- see the concrete algorithm's own
+     * docblock for exactly which criteria it checks. Still bounded by a generous, algorithm-specific safety
+     * ceiling even in this mode: those criteria are standard heuristics, not a formal termination guarantee
+     * for an arbitrary black-box objective. {@see estimateEvaluationCount()} reflects that ceiling once this
+     * is on, not a realistic prediction -- a run that actually converges will stop far short of it.
+     *
+     * @return static
+     */
+    public function trustTerminationCriteria(): static;
+
+    /**
+     * Seeds the search from an existing point instead of starting cold (the default, $fraction=0.0, is
+     * bit-identical to never calling this at all). Each algorithm interprets $vector/$fraction according to
+     * its own shape -- see this interface's own docblock for the two concrete strategies -- rather than one
+     * literal shared mechanism, the same design already used for {@see setStepWidth()}.
+     *
+     * A higher fraction converges faster when $vector is already a good starting point, at the cost of a
+     * higher chance of settling into a local optimum near it instead of finding a better region elsewhere;
+     * $fraction=0.0 keeps this package's original from-scratch exploration behavior exactly.
+     *
+     * @param array<int, float> $vector Same length/order as the problem's parameters.
+     * @param float $fraction How much of the initial search to bias toward $vector. Must be between 0.0
+     *   (ignored entirely) and 1.0 (fully seeded, modulo the jitter a population algorithm still applies).
+     *
+     * @throws \InvalidArgumentException When $fraction is outside [0.0; 1.0].
+     *
+     * @return static
+     */
+    public function setWarmStart(array $vector, float $fraction): static;
 
     /**
      * @param float $stepWidth Must be greater than 0.
