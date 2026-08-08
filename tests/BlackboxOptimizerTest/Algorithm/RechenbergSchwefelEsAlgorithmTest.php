@@ -14,6 +14,7 @@ use BlackboxOptimizer\Algorithm\RechenbergSchwefelEsAlgorithm;
 use BlackboxOptimizer\Problem\CallableProblem;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 
 /**
  * Validates against known toy benchmark functions (sphere, Rosenbrock) with known optima, per this
@@ -281,6 +282,42 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
     }
 
     /**
+     * This class reuses {@see \BlackboxOptimizer\Algorithm\Internal\TerminationCriteria} exactly as-is,
+     * the same shared TolX/TolXUp/ConditionCov/TolFun class {@see \BlackboxOptimizer\Algorithm\CmaEsAlgorithm}
+     * uses -- but the test above only ever exercises the TolX branch (sigma collapsing as the sphere
+     * converges). TolFun has never fired through THIS class's own wiring, only proven to work in the
+     * abstract via {@see \BlackboxOptimizerTest\Algorithm\Internal\TerminationCriteriaTest} and concretely
+     * via CmaEsAlgorithmTest's own equivalent test. A perfectly constant objective isolates it here too:
+     * with plus-selection, an offspring never scores strictly better than a tied parent, so the reported
+     * best value is 0.0 from the very first generation regardless of how sigma/the population itself moves
+     * -- hitting the flat-fitness window as soon as it fills, well before sigma could plausibly collapse
+     * 11 orders of magnitude in the same handful of generations.
+     *
+     * @return void
+     */
+    public function testOptimizeStopsEarlyViaTolFunOnAConstantObjective(): void
+    {
+        // Arrange
+        // phpcs:disable SlevomatCodingStandard.Functions.UnusedParameter -- the closure's signature must
+        // match ProblemInterface::evaluate()'s single array parameter; a constant objective never reads it.
+        $constant = static fn (array $vector): float => 0.0;
+        // phpcs:enable SlevomatCodingStandard.Functions.UnusedParameter
+        $problem = new CallableProblem($constant, [-5.0], [5.0]);
+
+        $algorithm = new RechenbergSchwefelEsAlgorithm();
+        $algorithm->setPopulationSize(8)->setMaxIterations(500);
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert -- fitness history length for n=1, lambda=8 is 10 + ceil(30*1/8) = 14 (same formula
+        // TerminationCriteria::resolveFitnessHistoryLength() uses), plus the initial-parents entry
+        // recorded before the generation loop even starts (see
+        // testTrustTerminationCriteriaOverridesATooSmallSetMaxIterations() above for the same +1).
+        $this->assertLessThanOrEqual(15, count($result->getBestValueHistory()), 'A perfectly flat objective should trigger TolFun as soon as the fitness-history window fills.');
+    }
+
+    /**
      * @return void
      */
     public function testSetWarmStartRejectsAFractionBelowZero(): void
@@ -342,5 +379,43 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
         // Assert
         $history = $result->getBestValueHistory();
         $this->assertLessThan(0.5, $history[0], 'A fully warm-started, tightly jittered initial parent population should already be close to the known optimum, before any generation runs.');
+    }
+
+    /**
+     * Mirrors {@see \BlackboxOptimizerTest\Algorithm\DifferentialEvolutionAlgorithmTest::testSeedInitialPopulationSplitsExactlyByWarmStartFractionAtAPartialFraction()}
+     * -- see that test's own docblock for why an outcome-based optimize() run can't isolate the split
+     * arithmetic cleanly and a direct call to the shared, inherited
+     * {@see \BlackboxOptimizer\Algorithm\AbstractOptimizerAlgorithm::seedInitialPopulation()} is needed
+     * instead. Written once per concrete class (matching this suite's own existing convention for the
+     * validation tests above, which cover identical shared behavior too) rather than once globally, even
+     * though the method body itself is inherited unchanged.
+     *
+     * @return void
+     */
+    public function testSeedInitialPopulationSplitsExactlyByWarmStartFractionAtAPartialFraction(): void
+    {
+        // Arrange -- bounds are huge relative to the jitter scale, so a member seeded via the random path
+        // has a negligible chance of accidentally landing within the warm-detection radius below.
+        $algorithm = new RechenbergSchwefelEsAlgorithm();
+        $algorithm->setWarmStart([10.0, 10.0], 0.3);
+
+        $seedInitialPopulation = new ReflectionMethod($algorithm, 'seedInitialPopulation');
+        $seedInitialPopulation->setAccessible(true);
+
+        // Act -- round(20 * 0.3) = 6 members expected near the vector, jitterScale=0.01 keeps them tight.
+        $population = $seedInitialPopulation->invoke($algorithm, 20, [-1000.0, -1000.0], [1000.0, 1000.0], 0.01);
+
+        // Assert
+        $warmCount = 0;
+
+        foreach ($population as $vector) {
+            $distanceFromWarmVector = sqrt(($vector[0] - 10.0) ** 2 + ($vector[1] - 10.0) ** 2);
+
+            if ($distanceFromWarmVector < 1.0) {
+                $warmCount++;
+            }
+        }
+
+        $this->assertSame(6, $warmCount, 'fraction=0.3 of a population of 20 should seed exactly round(20 * 0.3) = 6 members near the warm-start vector, not merely "some".');
     }
 }
