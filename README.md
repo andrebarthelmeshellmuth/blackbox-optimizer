@@ -260,8 +260,19 @@ this package's own API changing.
 
 ## Installation
 
+Not published on Packagist — install from a VCS repository instead:
+
+```json
+"repositories": [
+    {
+        "type": "vcs",
+        "url": "https://github.com/andrebarthelmeshellmuth/blackbox-optimizer"
+    }
+]
+```
+
 ```bash
-composer require andrebarthelmeshellmuth/blackbox-optimizer
+composer require andrebarthelmeshellmuth/blackbox-optimizer:^4.0
 ```
 
 No further setup — no config, no service registration, no framework of any kind to wire into. Instantiate
