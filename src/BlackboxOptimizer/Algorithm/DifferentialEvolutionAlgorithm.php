@@ -36,6 +36,13 @@ use Random\Randomizer;
  * generic formula, not specific to sigma/eigenvalues); the fitness-plateau check itself is reimplemented
  * locally rather than exposed as a public method on that class, since it's a handful of lines not worth an
  * extra dependency edge for.
+ *
+ * That same population-vs-single-trajectory difference applies to TolFun, which is why the plateau check
+ * is paired with {@see hasConvergedPopulationFitness()} rather than trusted alone: a flat best value is
+ * evidence of convergence in CMA-ES, where the whole distribution moves each generation, but not in DE,
+ * where one lucky early individual can stay the best for many generations while the population around it
+ * is still converging. Requiring both means a plateau only stops a run once the population agrees there
+ * is nothing left to find.
  */
 class DifferentialEvolutionAlgorithm extends AbstractOptimizerAlgorithm
 {
@@ -195,7 +202,10 @@ class DifferentialEvolutionAlgorithm extends AbstractOptimizerAlgorithm
 
             if (
                 $this->hasPopulationCollapsed($population, $lowerBounds, $upperBounds)
-                || $this->hasFlatFitnessHistory($recentGenerationBestValues, $fitnessHistoryLength)
+                || (
+                    $this->hasFlatFitnessHistory($recentGenerationBestValues, $fitnessHistoryLength)
+                    && $this->hasConvergedPopulationFitness($populationValues)
+                )
             ) {
                 break;
             }
@@ -261,8 +271,45 @@ class DifferentialEvolutionAlgorithm extends AbstractOptimizerAlgorithm
     }
 
     /**
+     * The population's own fitness spread, and the reason the plateau check above is not trusted on its
+     * own. A stalled BEST value means something quite different in DE than it does in CMA-ES: CMA-ES moves
+     * its whole sampling distribution every generation, so a flat best genuinely indicates convergence,
+     * whereas DE's elitist per-individual selection lets a single lucky early individual sit unchanged for
+     * many generations while the rest of the population is still spread out and still converging toward
+     * it. Requiring the whole population to agree on its fitness -- the classic DE convergence test -- is
+     * what makes "nothing improved recently" mean "nothing is LEFT to improve".
+     *
+     * Uses the same TOL_FUN as the plateau check: this is the same TolFun question asked across the
+     * population at one instant, rather than across one individual over time.
+     *
+     * @param array<int, float> $populationValues
+     *
+     * @return bool
+     */
+    protected function hasConvergedPopulationFitness(array $populationValues): bool
+    {
+        $min = INF;
+        $max = -INF;
+
+        foreach ($populationValues as $value) {
+            if ($value < $min) {
+                $min = $value;
+            }
+
+            if ($value > $max) {
+                $max = $value;
+            }
+        }
+
+        return ($max - $min) < static::TOL_FUN;
+    }
+
+    /**
      * Same TolFun idea as {@see TerminationCriteria::shouldTerminateEarly()}'s own fitness-plateau check,
      * reimplemented locally rather than shared -- see this class's own docblock for why.
+     *
+     * Never a stop signal by itself -- see {@see hasConvergedPopulationFitness()} for why a flat best
+     * value alone does not mean a DE run has converged.
      *
      * @param array<int, float> $recentGenerationBestValues
      * @param int $fitnessHistoryLength
