@@ -1,5 +1,10 @@
 # Blackbox Optimizer
 
+[![CI](https://github.com/andrebarthelmeshellmuth/blackbox-optimizer/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/andrebarthelmeshellmuth/blackbox-optimizer/actions/workflows/ci.yml)
+[![PHP](https://img.shields.io/badge/php-%E2%89%A5%208.3-777bb4)](composer.json)
+[![PHPStan](https://img.shields.io/badge/PHPStan-level%208-2a6b2a)](phpstan.neon)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 Derivative-free, box-constrained black-box minimization for PHP. Given any `array<float> -> float`
 objective function and per-dimension bounds, finds the vector that minimizes it — no gradient, no
 assumption about what the function computes, just repeated evaluation. Ships three algorithms behind one

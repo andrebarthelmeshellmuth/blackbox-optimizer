@@ -14,6 +14,8 @@ use BlackboxOptimizer\Algorithm\OptimizerAlgorithmInterface;
 use BlackboxOptimizer\Problem\CallableProblem;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use Random\Engine\PcgOneseq128XslRr64;
+use Random\Randomizer;
 use ReflectionMethod;
 
 /**
@@ -24,11 +26,43 @@ use ReflectionMethod;
 class DifferentialEvolutionAlgorithmTest extends TestCase
 {
     /**
+     * Every algorithm here is stochastic, so an unseeded run turns each convergence assertion below into a
+     * probabilistic claim rather than a fact: the same commit passes or fails depending on the draw, which
+     * is exactly how this suite used to go red on one PHP version and green on another. Seeding pins the
+     * draw, so a failure always means a real behavioral regression.
+     *
+     * @var int
+     */
+    protected const RNG_SEED = 20260818;
+
+    /**
+     * A draw that reproduced the premature-stop defect described in
+     * {@see testAStalledBestValueDoesNotStopARunWhileThePopulationIsStillSpread()}. Pinned separately from
+     * {@see RNG_SEED} so that test keeps witnessing the bug even if the suite-wide seed is ever changed.
+     *
+     * @var int
+     */
+    protected const PREMATURE_STOP_WITNESS_SEED = 4;
+
+    /**
+     * A seeded engine rather than the production default: {@see Randomizer} with no engine uses
+     * {@see \Random\Engine\Secure}, which cannot be seeded by design. PcgOneseq128XslRr64 is
+     * deterministic for a given seed and stable across PHP versions and platforms, which is what makes
+     * the assertions reproducible.
+     *
+     * @return \BlackboxOptimizer\Algorithm\DifferentialEvolutionAlgorithm
+     */
+    protected function createAlgorithm(): DifferentialEvolutionAlgorithm
+    {
+        return new DifferentialEvolutionAlgorithm(new Randomizer(new PcgOneseq128XslRr64(static::RNG_SEED)));
+    }
+
+    /**
      * @return void
      */
     public function testImplementsTheGenericOptimizerAlgorithmInterface(): void
     {
-        $this->assertInstanceOf(OptimizerAlgorithmInterface::class, new DifferentialEvolutionAlgorithm());
+        $this->assertInstanceOf(OptimizerAlgorithmInterface::class, $this->createAlgorithm());
     }
 
     /**
@@ -36,7 +70,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
      */
     public function testExposesFactualNameAndDescriptionMetadata(): void
     {
-        $algorithm = new DifferentialEvolutionAlgorithm();
+        $algorithm = $this->createAlgorithm();
 
         $this->assertSame('Differential Evolution', $algorithm->getName());
         $this->assertNotSame('', $algorithm->getDescription());
@@ -51,7 +85,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
     public function testEstimateEvaluationCountFallsBackToTheDefaultPopulationSize(): void
     {
         // Arrange
-        $algorithm = (new DifferentialEvolutionAlgorithm())->setMaxIterations(10);
+        $algorithm = $this->createAlgorithm()->setMaxIterations(10);
 
         // Act
         $estimate = $algorithm->estimateEvaluationCount();
@@ -66,7 +100,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
     public function testEstimateEvaluationCountMatchesPopulationSizeTimesIterationsPlusOne(): void
     {
         // Arrange
-        $algorithm = (new DifferentialEvolutionAlgorithm())->setPopulationSize(30)->setMaxIterations(150);
+        $algorithm = $this->createAlgorithm()->setPopulationSize(30)->setMaxIterations(150);
 
         // Act
         $estimate = $algorithm->estimateEvaluationCount();
@@ -96,7 +130,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
 
         $problem = new CallableProblem($sphere, [-5.0, -5.0, -5.0], [5.0, 5.0, 5.0]);
 
-        $algorithm = new DifferentialEvolutionAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(30)->setMaxIterations(150);
 
         // Act
@@ -133,7 +167,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
 
         $problem = new CallableProblem($sphere, [-5.0, -5.0, -5.0], [5.0, 5.0, 5.0]);
 
-        $algorithm = new DifferentialEvolutionAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(30)->setMaxIterations(150);
 
         $estimate = $algorithm->estimateEvaluationCount();
@@ -163,7 +197,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
 
         $problem = new CallableProblem($rosenbrock, [-3.0, -3.0], [3.0, 3.0]);
 
-        $algorithm = new DifferentialEvolutionAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(40)->setMaxIterations(500);
 
         // Act
@@ -184,7 +218,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
         $sphere = static fn (array $vector): float => array_sum(array_map(fn (float $value): float => $value ** 2, $vector));
         $problem = new CallableProblem($sphere, [-5.0], [5.0]);
 
-        $algorithm = new DifferentialEvolutionAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(10)->setMaxIterations(5);
 
         // Act
@@ -209,7 +243,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        (new DifferentialEvolutionAlgorithm())->setPopulationSize(3);
+        $this->createAlgorithm()->setPopulationSize(3);
     }
 
     /**
@@ -219,7 +253,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        (new DifferentialEvolutionAlgorithm())->setCrossoverProbability(1.5);
+        $this->createAlgorithm()->setCrossoverProbability(1.5);
     }
 
     /**
@@ -236,7 +270,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         $problem = new CallableProblem(static fn (array $vector): float => $vector[0] ** 2, [-INF], [INF]);
-        (new DifferentialEvolutionAlgorithm())->optimize($problem);
+        $this->createAlgorithm()->optimize($problem);
     }
 
     /**
@@ -253,7 +287,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
         $sphere = static fn (array $vector): float => $vector[0] ** 2 + $vector[1] ** 2;
         $problem = new CallableProblem($sphere, [-5.0, -5.0], [5.0, 5.0]);
 
-        $algorithm = new DifferentialEvolutionAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(20)->setMaxIterations(3)->trustTerminationCriteria();
 
         // Act
@@ -288,7 +322,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
         // phpcs:enable SlevomatCodingStandard.Functions.UnusedParameter
         $problem = new CallableProblem($constant, [-5.0], [5.0]);
 
-        $algorithm = new DifferentialEvolutionAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(8)->setMaxIterations(500);
 
         // Act
@@ -302,13 +336,56 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
     }
 
     /**
+     * The other half of the constant-objective test above, and a regression guard for a real defect: the
+     * fitness-plateau check used to stop a run on its own, which is wrong for DE. One lucky early
+     * individual can stay the population's best for longer than the plateau window while the rest of the
+     * population is still spread out and still converging, so the run was cut off at a bad point and no
+     * amount of extra maxIterations budget could recover it -- a 3x larger budget produced a byte-identical
+     * result. Measured over 200 seeds this hit roughly one run in five, which is what made this suite go
+     * red on one PHP version and green on another.
+     *
+     * Uses its own seed rather than {@see RNG_SEED} precisely because the default seed is one of the draws
+     * that got LUCKY: the bug only reproduces on particular draws, so pinning a witness seed is the only
+     * way to keep this honest. The generation-count assertion is the one that actually catches a
+     * regression -- under the defect this run stopped after 20 of 151 generations (570 of 4530
+     * evaluations) at a best value of 6.4e-2, versus the 4.9e-14 it reaches when allowed to finish.
+     *
+     * @return void
+     */
+    public function testAStalledBestValueDoesNotStopARunWhileThePopulationIsStillSpread(): void
+    {
+        // Arrange
+        $sphere = static function (array $vector): float {
+            $sum = 0.0;
+
+            foreach ($vector as $component) {
+                $sum += $component ** 2;
+            }
+
+            return $sum;
+        };
+
+        $problem = new CallableProblem($sphere, [-5.0, -5.0, -5.0], [5.0, 5.0, 5.0]);
+
+        $algorithm = new DifferentialEvolutionAlgorithm(new Randomizer(new PcgOneseq128XslRr64(static::PREMATURE_STOP_WITNESS_SEED)));
+        $algorithm->setPopulationSize(30)->setMaxIterations(150);
+
+        // Act
+        $result = $algorithm->optimize($problem);
+
+        // Assert
+        $this->assertGreaterThan(100, count($result->getBestValueHistory()), 'A plateaued best value must not stop the run while the population is still spread out.');
+        $this->assertLessThan(1e-4, $result->getBestValue(), 'Allowed to run to convergence, DE reaches the sphere function\'s known minimum of 0.');
+    }
+
+    /**
      * @return void
      */
     public function testSetWarmStartRejectsAFractionBelowZero(): void
     {
         $this->expectException(InvalidArgumentException::class);
 
-        (new DifferentialEvolutionAlgorithm())->setWarmStart([0.0], -0.1);
+        $this->createAlgorithm()->setWarmStart([0.0], -0.1);
     }
 
     /**
@@ -318,7 +395,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        (new DifferentialEvolutionAlgorithm())->setWarmStart([0.0], 1.1);
+        $this->createAlgorithm()->setWarmStart([0.0], 1.1);
     }
 
     /**
@@ -334,7 +411,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         $problem = new CallableProblem(static fn (array $vector): float => $vector[0] ** 2, [-INF], [INF]);
-        (new DifferentialEvolutionAlgorithm())->setWarmStart([3.0], 0.0)->optimize($problem);
+        $this->createAlgorithm()->setWarmStart([3.0], 0.0)->optimize($problem);
     }
 
     /**
@@ -356,7 +433,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
 
         $problem = new CallableProblem($shiftedSphere, [-100.0, -100.0], [100.0, 100.0]);
 
-        $algorithm = new DifferentialEvolutionAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(20)->setStepWidth(0.05)->setWarmStart([10.0, 10.0], 1.0)->setMaxIterations(1);
 
         // Act
@@ -386,7 +463,7 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
     {
         // Arrange -- bounds are huge relative to the jitter scale, so a member seeded via the random path
         // has a negligible chance of accidentally landing within the warm-detection radius below.
-        $algorithm = new DifferentialEvolutionAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setWarmStart([10.0, 10.0], 0.3);
 
         $seedInitialPopulation = new ReflectionMethod($algorithm, 'seedInitialPopulation');

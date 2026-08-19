@@ -14,6 +14,8 @@ use BlackboxOptimizer\Algorithm\RechenbergSchwefelEsAlgorithm;
 use BlackboxOptimizer\Problem\CallableProblem;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use Random\Engine\PcgOneseq128XslRr64;
+use Random\Randomizer;
 use ReflectionMethod;
 
 /**
@@ -24,11 +26,34 @@ use ReflectionMethod;
 class RechenbergSchwefelEsAlgorithmTest extends TestCase
 {
     /**
+     * Every algorithm here is stochastic, so an unseeded run turns each convergence assertion below into a
+     * probabilistic claim rather than a fact: the same commit passes or fails depending on the draw, which
+     * is exactly how this suite used to go red on one PHP version and green on another. Seeding pins the
+     * draw, so a failure always means a real behavioral regression.
+     *
+     * @var int
+     */
+    protected const RNG_SEED = 20260818;
+
+    /**
+     * A seeded engine rather than the production default: {@see Randomizer} with no engine uses
+     * {@see \Random\Engine\Secure}, which cannot be seeded by design. PcgOneseq128XslRr64 is
+     * deterministic for a given seed and stable across PHP versions and platforms, which is what makes
+     * the assertions reproducible.
+     *
+     * @return \BlackboxOptimizer\Algorithm\RechenbergSchwefelEsAlgorithm
+     */
+    protected function createAlgorithm(): RechenbergSchwefelEsAlgorithm
+    {
+        return new RechenbergSchwefelEsAlgorithm(new Randomizer(new PcgOneseq128XslRr64(static::RNG_SEED)));
+    }
+
+    /**
      * @return void
      */
     public function testImplementsTheGenericOptimizerAlgorithmInterface(): void
     {
-        $this->assertInstanceOf(OptimizerAlgorithmInterface::class, new RechenbergSchwefelEsAlgorithm());
+        $this->assertInstanceOf(OptimizerAlgorithmInterface::class, $this->createAlgorithm());
     }
 
     /**
@@ -36,7 +61,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
      */
     public function testExposesFactualNameAndDescriptionMetadata(): void
     {
-        $algorithm = new RechenbergSchwefelEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
 
         $this->assertSame('Rechenberg/Schwefel ES', $algorithm->getName());
         $this->assertNotSame('', $algorithm->getDescription());
@@ -52,7 +77,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
     public function testEstimateEvaluationCountMatchesParentCountPlusOffspringCountTimesIterations(): void
     {
         // Arrange
-        $algorithm = (new RechenbergSchwefelEsAlgorithm())->setPopulationSize(20)->setMaxIterations(200);
+        $algorithm = $this->createAlgorithm()->setPopulationSize(20)->setMaxIterations(200);
 
         // Act
         $estimate = $algorithm->estimateEvaluationCount();
@@ -82,7 +107,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
 
         $problem = new CallableProblem($sphere, [-5.0, -5.0, -5.0], [5.0, 5.0, 5.0]);
 
-        $algorithm = new RechenbergSchwefelEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(20)->setMaxIterations(200);
 
         // Act
@@ -119,7 +144,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
 
         $problem = new CallableProblem($sphere, [-5.0, -5.0, -5.0], [5.0, 5.0, 5.0]);
 
-        $algorithm = new RechenbergSchwefelEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(20)->setMaxIterations(200);
 
         $estimate = $algorithm->estimateEvaluationCount();
@@ -150,7 +175,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
 
         $problem = new CallableProblem($rosenbrock, [-3.0, -3.0], [3.0, 3.0]);
 
-        $algorithm = new RechenbergSchwefelEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(30)->setMaxIterations(800);
 
         // Act
@@ -171,7 +196,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
         $sphere = static fn (array $vector): float => array_sum(array_map(fn (float $value): float => $value ** 2, $vector));
         $problem = new CallableProblem($sphere, [-5.0], [5.0]);
 
-        $algorithm = new RechenbergSchwefelEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(10)->setParentCount(2)->setMaxIterations(5);
 
         // Act
@@ -201,7 +226,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
         $sphere = static fn (array $vector): float => array_sum(array_map(fn (float $value): float => $value ** 2, $vector));
         $problem = new CallableProblem($sphere, [-5.0], [5.0]);
 
-        $algorithm = new RechenbergSchwefelEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(10)->setParentCount(1)->setMaxIterations(3);
 
         // Act -- 1 initial parent + 3 generations * 10 offspring
@@ -218,7 +243,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        (new RechenbergSchwefelEsAlgorithm())->setParentCount(0);
+        $this->createAlgorithm()->setParentCount(0);
     }
 
     /**
@@ -229,7 +254,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         $problem = new CallableProblem(static fn (array $vector): float => $vector[0] ** 2, [-5.0], [5.0]);
-        (new RechenbergSchwefelEsAlgorithm())->setPopulationSize(4)->setParentCount(5)->optimize($problem);
+        $this->createAlgorithm()->setPopulationSize(4)->setParentCount(5)->optimize($problem);
     }
 
     /**
@@ -239,7 +264,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        (new RechenbergSchwefelEsAlgorithm())->setPopulationSize(3);
+        $this->createAlgorithm()->setPopulationSize(3);
     }
 
     /**
@@ -253,7 +278,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         $problem = new CallableProblem(static fn (array $vector): float => $vector[0] ** 2, [-INF], [INF]);
-        (new RechenbergSchwefelEsAlgorithm())->optimize($problem);
+        $this->createAlgorithm()->optimize($problem);
     }
 
     /**
@@ -268,7 +293,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
         $sphere = static fn (array $vector): float => $vector[0] ** 2 + $vector[1] ** 2;
         $problem = new CallableProblem($sphere, [-5.0, -5.0], [5.0, 5.0]);
 
-        $algorithm = new RechenbergSchwefelEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(20)->setMaxIterations(3)->trustTerminationCriteria();
 
         // Act
@@ -304,7 +329,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
         // phpcs:enable SlevomatCodingStandard.Functions.UnusedParameter
         $problem = new CallableProblem($constant, [-5.0], [5.0]);
 
-        $algorithm = new RechenbergSchwefelEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(8)->setMaxIterations(500);
 
         // Act
@@ -324,7 +349,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        (new RechenbergSchwefelEsAlgorithm())->setWarmStart([0.0], -0.1);
+        $this->createAlgorithm()->setWarmStart([0.0], -0.1);
     }
 
     /**
@@ -334,7 +359,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        (new RechenbergSchwefelEsAlgorithm())->setWarmStart([0.0], 1.1);
+        $this->createAlgorithm()->setWarmStart([0.0], 1.1);
     }
 
     /**
@@ -350,7 +375,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         $problem = new CallableProblem(static fn (array $vector): float => $vector[0] ** 2, [-INF], [INF]);
-        (new RechenbergSchwefelEsAlgorithm())->setWarmStart([3.0], 0.0)->optimize($problem);
+        $this->createAlgorithm()->setWarmStart([3.0], 0.0)->optimize($problem);
     }
 
     /**
@@ -370,7 +395,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
 
         $problem = new CallableProblem($shiftedSphere, [-100.0, -100.0], [100.0, 100.0]);
 
-        $algorithm = new RechenbergSchwefelEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(20)->setStepWidth(0.05)->setWarmStart([10.0, 10.0], 1.0)->setMaxIterations(1);
 
         // Act
@@ -396,7 +421,7 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
     {
         // Arrange -- bounds are huge relative to the jitter scale, so a member seeded via the random path
         // has a negligible chance of accidentally landing within the warm-detection radius below.
-        $algorithm = new RechenbergSchwefelEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setWarmStart([10.0, 10.0], 0.3);
 
         $seedInitialPopulation = new ReflectionMethod($algorithm, 'seedInitialPopulation');

@@ -14,6 +14,8 @@ use BlackboxOptimizer\Algorithm\OptimizerAlgorithmInterface;
 use BlackboxOptimizer\Problem\CallableProblem;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use Random\Engine\PcgOneseq128XslRr64;
+use Random\Randomizer;
 
 /**
  * Benchmark-function discipline: prove correctness against known optima BEFORE ever pointing this at a
@@ -22,11 +24,35 @@ use PHPUnit\Framework\TestCase;
 class CmaEsAlgorithmTest extends TestCase
 {
     /**
+     * Every algorithm here is stochastic, so an unseeded run turns each convergence assertion below into a
+     * probabilistic claim rather than a fact: the same commit passes or fails depending on the draw, which
+     * is exactly how this suite used to go red on one PHP version and green on another. Seeding pins the
+     * draw, so a failure always means a real behavioral regression.
+     *
+     * @var int
+     */
+    protected const RNG_SEED = 20260818;
+
+    /**
+     * A seeded engine rather than the production default: {@see Randomizer} with no engine uses
+     * {@see \Random\Engine\Secure}, which cannot be seeded by design. PcgOneseq128XslRr64 is
+     * deterministic for a given seed and stable across PHP versions and platforms, which is what makes
+     * the assertions reproducible. The randomizer is CMA-ES's SECOND constructor argument -- the first
+     * stays defaulted so the real eigen-decomposition is exercised.
+     *
+     * @return \BlackboxOptimizer\Algorithm\CmaEsAlgorithm
+     */
+    protected function createAlgorithm(): CmaEsAlgorithm
+    {
+        return new CmaEsAlgorithm(null, new Randomizer(new PcgOneseq128XslRr64(static::RNG_SEED)));
+    }
+
+    /**
      * @return void
      */
     public function testImplementsTheGenericOptimizerAlgorithmInterface(): void
     {
-        $this->assertInstanceOf(OptimizerAlgorithmInterface::class, new CmaEsAlgorithm());
+        $this->assertInstanceOf(OptimizerAlgorithmInterface::class, $this->createAlgorithm());
     }
 
     /**
@@ -34,7 +60,7 @@ class CmaEsAlgorithmTest extends TestCase
      */
     public function testExposesFactualNameAndDescriptionMetadata(): void
     {
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
 
         $this->assertSame('CMA-ES', $algorithm->getName());
         $this->assertNotSame('', $algorithm->getDescription());
@@ -46,7 +72,7 @@ class CmaEsAlgorithmTest extends TestCase
     public function testEstimateEvaluationCountRequiresAnExplicitPopulationSize(): void
     {
         // Arrange
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
 
         // Assert
         $this->expectException(InvalidArgumentException::class);
@@ -61,7 +87,7 @@ class CmaEsAlgorithmTest extends TestCase
     public function testEstimateEvaluationCountMatchesPopulationSizeTimesMaxIterations(): void
     {
         // Arrange
-        $algorithm = (new CmaEsAlgorithm())->setPopulationSize(10)->setMaxIterations(50);
+        $algorithm = $this->createAlgorithm()->setPopulationSize(10)->setMaxIterations(50);
 
         // Act
         $estimate = $algorithm->estimateEvaluationCount();
@@ -88,7 +114,7 @@ class CmaEsAlgorithmTest extends TestCase
 
         $problem = new CallableProblem($sphere, [-5.0, -5.0, -5.0], [5.0, 5.0, 5.0]);
 
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(12)->setStepWidth(1.0)->setMaxIterations(100);
 
         // Act
@@ -125,7 +151,7 @@ class CmaEsAlgorithmTest extends TestCase
 
         $problem = new CallableProblem($sphere, [-5.0, -5.0, -5.0], [5.0, 5.0, 5.0]);
 
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(12)->setStepWidth(1.0)->setMaxIterations(100);
 
         $estimate = $algorithm->estimateEvaluationCount();
@@ -155,7 +181,7 @@ class CmaEsAlgorithmTest extends TestCase
 
         $problem = new CallableProblem($rosenbrock, [-3.0, -3.0], [3.0, 3.0]);
 
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(16)->setStepWidth(0.5)->setMaxIterations(200);
 
         // Act
@@ -176,7 +202,7 @@ class CmaEsAlgorithmTest extends TestCase
         $sphere = static fn (array $vector): float => array_sum(array_map(fn (float $value): float => $value ** 2, $vector));
         $problem = new CallableProblem($sphere, [-5.0], [5.0]);
 
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(8)->setStepWidth(1.0)->setMaxIterations(5);
 
         // Act
@@ -208,7 +234,7 @@ class CmaEsAlgorithmTest extends TestCase
         $sphere = static fn (array $vector): float => $vector[0] ** 2 + $vector[1] ** 2;
         $problem = new CallableProblem($sphere, [-5.0, -5.0], [5.0, 5.0]);
 
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(8)->setStepWidth(1.0)->setMaxIterations(500);
 
         // Act
@@ -236,7 +262,7 @@ class CmaEsAlgorithmTest extends TestCase
         // phpcs:enable SlevomatCodingStandard.Functions.UnusedParameter
         $problem = new CallableProblem($constant, [-5.0], [5.0]);
 
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(8)->setStepWidth(1.0)->setMaxIterations(500);
 
         // Act
@@ -260,7 +286,7 @@ class CmaEsAlgorithmTest extends TestCase
 
         $problem = new CallableProblem($shiftedSphere, [5.0, 5.0], [15.0, 15.0]);
 
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(4)->setStepWidth(0.1)->setMaxIterations(1);
 
         // Act
@@ -278,7 +304,7 @@ class CmaEsAlgorithmTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         $problem = new CallableProblem(static fn (array $vector): float => $vector[0] ** 2, [-INF], [INF]);
-        (new CmaEsAlgorithm())->optimize($problem);
+        $this->createAlgorithm()->optimize($problem);
     }
 
     /**
@@ -290,7 +316,7 @@ class CmaEsAlgorithmTest extends TestCase
         $sphere = static fn (array $vector): float => $vector[0] ** 2;
         $problem = new CallableProblem($sphere, [-INF], [INF]);
 
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(8)->setStepWidth(1.0)->setInitialMean([3.0])->setMaxIterations(60);
 
         // Act
@@ -307,7 +333,7 @@ class CmaEsAlgorithmTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        (new CmaEsAlgorithm())->setPopulationSize(3);
+        $this->createAlgorithm()->setPopulationSize(3);
     }
 
     /**
@@ -317,7 +343,7 @@ class CmaEsAlgorithmTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        (new CmaEsAlgorithm())->setStepWidth(0.0);
+        $this->createAlgorithm()->setStepWidth(0.0);
     }
 
     /**
@@ -327,7 +353,7 @@ class CmaEsAlgorithmTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        (new CmaEsAlgorithm())->setMaxIterations(0);
+        $this->createAlgorithm()->setMaxIterations(0);
     }
 
     /**
@@ -344,7 +370,7 @@ class CmaEsAlgorithmTest extends TestCase
         $sphere = static fn (array $vector): float => $vector[0] ** 2 + $vector[1] ** 2;
         $problem = new CallableProblem($sphere, [-5.0, -5.0], [5.0, 5.0]);
 
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(8)->setStepWidth(1.0)->setMaxIterations(3)->trustTerminationCriteria();
 
         // Act
@@ -364,7 +390,7 @@ class CmaEsAlgorithmTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        (new CmaEsAlgorithm())->setWarmStart([0.0], -0.1);
+        $this->createAlgorithm()->setWarmStart([0.0], -0.1);
     }
 
     /**
@@ -374,7 +400,7 @@ class CmaEsAlgorithmTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        (new CmaEsAlgorithm())->setWarmStart([0.0], 1.1);
+        $this->createAlgorithm()->setWarmStart([0.0], 1.1);
     }
 
     /**
@@ -394,7 +420,7 @@ class CmaEsAlgorithmTest extends TestCase
 
         $problem = new CallableProblem($shiftedSphere, [5.0, 5.0], [15.0, 15.0]);
 
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(4)->setStepWidth(0.1)->setWarmStart([-1000.0, -1000.0], 0.0)->setMaxIterations(1);
 
         // Act
@@ -421,7 +447,7 @@ class CmaEsAlgorithmTest extends TestCase
 
         $problem = new CallableProblem($shiftedSphere, [-10.0, -10.0], [10.0, 10.0]);
 
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(4)->setStepWidth(0.1)->setWarmStart([10.0, 10.0], 1.0)->setMaxIterations(1);
 
         // Act
@@ -447,7 +473,7 @@ class CmaEsAlgorithmTest extends TestCase
 
         $problem = new CallableProblem($blendedOptimum, [-10.0, -10.0], [10.0, 10.0]);
 
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(4)->setStepWidth(0.1)->setWarmStart([10.0, 10.0], 0.5)->setMaxIterations(1);
 
         // Act
@@ -471,7 +497,7 @@ class CmaEsAlgorithmTest extends TestCase
         $sphere = static fn (array $vector): float => $vector[0] ** 2;
         $problem = new CallableProblem($sphere, [-10.0], [10.0]);
 
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(4)->setStepWidth(0.05)->setWarmStart([-1000.0], 1.0)->setInitialMean([0.0])->setMaxIterations(1);
 
         // Act
@@ -494,7 +520,7 @@ class CmaEsAlgorithmTest extends TestCase
         $sphere = static fn (array $vector): float => $vector[0] ** 2;
         $problem = new CallableProblem($sphere, [-INF], [INF]);
 
-        $algorithm = new CmaEsAlgorithm();
+        $algorithm = $this->createAlgorithm();
         $algorithm->setPopulationSize(8)->setStepWidth(1.0)->setWarmStart([3.0], 1.0)->setMaxIterations(60);
 
         // Act
@@ -516,6 +542,6 @@ class CmaEsAlgorithmTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         $problem = new CallableProblem(static fn (array $vector): float => $vector[0] ** 2, [-INF], [INF]);
-        (new CmaEsAlgorithm())->setWarmStart([3.0], 0.5)->optimize($problem);
+        $this->createAlgorithm()->setWarmStart([3.0], 0.5)->optimize($problem);
     }
 }

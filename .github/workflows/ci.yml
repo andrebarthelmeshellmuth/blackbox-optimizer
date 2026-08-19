@@ -6,6 +6,20 @@ on:
   pull_request:
 
 jobs:
+  xml:
+    # The ruleset files are configuration that nothing else validates: phpcs reacts to a malformed
+    # ruleset by exiting non-zero with no parse error of its own, and an XML comment containing a
+    # double hyphen is enough to do it -- a silent, whole-ruleset failure that looks like a lint
+    # error. xmllint reports the line and column instead.
+    name: xmllint (rulesets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install xmllint
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+      - name: Validate ruleset XML is well-formed
+        run: xmllint --noout phpcs.xml phpmd*.xml
+
   validate:
     name: composer validate
     runs-on: ubuntu-latest
