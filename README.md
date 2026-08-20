@@ -29,6 +29,7 @@ here once it became clear nothing about the optimization core actually depended 
   - [CallableProblem](#callableproblem)
 - [Choosing an algorithm](#choosing-an-algorithm)
 - [Early termination](#early-termination)
+- [Restarting on a plateau](#restarting-on-a-plateau)
 - [Warm start](#warm-start)
 - [Expressing constraints beyond a box](#expressing-constraints-beyond-a-box)
 - [Relationship to search-ranking-optimizer](#relationship-to-search-ranking-optimizer)
@@ -199,9 +200,55 @@ Hansen's own tutorial and reference implementations (and this package's own equi
 principle satisfy none of them for a very long time. The safety ceiling stays in place as the last-resort
 circuit breaker even in this mode.
 
-Also deliberately not restart machinery (IPOP/BIPOP-CMA-ES) on top of any of this: a restart resets and
-re-spends a caller's own evaluation-count budget, a real design tradeoff rather than a strict improvement,
-so that stays a separate, still-open decision.
+See [Restarting on a plateau](#restarting-on-a-plateau) below for IPOP-style restart machinery on top of
+this — available as an explicit opt-in wrapper, not built into any algorithm here.
+
+## Restarting on a plateau
+
+```php
+use BlackboxOptimizer\Algorithm\RestartingOptimizerDecorator;
+
+$restarting = new RestartingOptimizerDecorator(new CmaEsAlgorithm());
+$restarting->setPopulationSize(10)->setMaxIterations(150);
+
+$result = $restarting->optimize($problem);
+```
+
+`RestartingOptimizerDecorator` wraps any `OptimizerAlgorithmInterface` with an IPOP-style restart (Auger &
+Hansen 2005): when a run stops on a genuine fitness plateau (`TerminationReason::TOL_FUN` — see above), it
+restarts from a fresh random point with a **doubled** population, rather than accepting whichever local
+optimum the first, unlucky random initialization happened to land in. A run that stops for any other reason
+— converged (`TOL_X`), diverged (`TOL_X_UP`), or numerically degenerate (`CONDITION_COV`) — does **not**
+restart: a converged run already found what that starting point had to offer, and neither of the other two
+is something a fresh start would fix.
+
+**Budget discipline**: the total evaluation budget across every restart is fixed up front, at exactly
+`populationSize * maxIterations` — the same number a single, non-restarting run of that algorithm already
+means. Population doubling is what bounds the restart *count*: growth is geometric, so even a modest budget
+only buys a handful of restarts before the next doubled population can no longer be afforded, at which point
+the decorator stops and returns the best candidate found across every restart. It never spends more
+evaluations than that budget promised.
+
+`OptimizationResult::getRestartHistory()` returns one `RestartHistoryEntry` per restart actually run — its
+population size, how many generations it used (which can be *below* the caller's configured cap, when the
+remaining budget couldn't afford a full allowance at a larger, doubled population), why it stopped, its own
+best value, and whether it improved on every prior restart's best. Building a report like:
+
+```
+Restart 0: population 10, 29 generations, plateau, best 0.7123
+Restart 1: population 20, 41 generations, plateau, best 0.7910 (improved)
+Restart 2: population 40, 12 generations, budget exhausted, best 0.7910
+```
+
+is a matter of formatting that list — see `spryker-community/search-ranking-optimizer`'s own optimization-run
+GUI for a worked example.
+
+`RestartingOptimizerDecorator` does not support `trustTerminationCriteria()` (it throws `LogicException`):
+that mode would let each restart run out to the inner algorithm's own internal safety ceiling instead of the
+budget `setPopulationSize()`/`setMaxIterations()` define here, silently blowing past this decorator's own
+accounting. The decorator's restart-on-plateau mechanism is this package's answer to the same underlying
+need — "don't give up just because one fixed generation count ran out" — scoped to a budget the caller
+actually chose instead.
 
 ## Warm start
 
@@ -288,11 +335,11 @@ an algorithm, build a `Problem`, call `optimize()`.
 - **Global bounds only, no cross-dimension constraints** — see
   [Expressing constraints beyond a box](#expressing-constraints-beyond-a-box) above; anything beyond an
   independent box bound per dimension needs a reparametrization on the caller's side.
-- **None of the three support automatic restarts** (e.g. CMA-ES's own IPOP-CMA-ES variant) on top of their
-  own early termination — deliberately, in favor of simple, reviewable reference code; see
-  [Early termination](#early-termination). Early termination itself is a set of standard heuristics, not a
-  formal termination guarantee for an arbitrary objective — `trustTerminationCriteria()` still keeps a
-  real, generous safety ceiling rather than looping forever.
+- **Automatic restarts (IPOP-CMA-ES-style) are an explicit opt-in wrapper, not built into any algorithm** —
+  see [Restarting on a plateau](#restarting-on-a-plateau). Early termination itself is a set of standard
+  heuristics, not a formal termination guarantee for an arbitrary objective — `trustTerminationCriteria()`
+  still keeps a real, generous safety ceiling rather than looping forever, and `RestartingOptimizerDecorator`
+  keeps its own restart budget just as bounded.
 - **`Integer` parameters are declared, not enforced.** `ParameterType::Integer` exists so a `Problem` can
   honestly describe an integer dimension, but no shipped algorithm currently rounds a candidate to the
   nearest integer for it — all three operate on plain continuous floats throughout.

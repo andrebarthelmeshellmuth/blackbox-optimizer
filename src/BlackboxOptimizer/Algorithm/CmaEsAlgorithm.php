@@ -11,6 +11,7 @@ namespace BlackboxOptimizer\Algorithm;
 
 use BlackboxOptimizer\Algorithm\Internal\SymmetricEigenDecomposition;
 use BlackboxOptimizer\Algorithm\Internal\TerminationCriteria;
+use BlackboxOptimizer\Algorithm\Internal\TerminationReason;
 use BlackboxOptimizer\Algorithm\Internal\VectorMath;
 use BlackboxOptimizer\Problem\ProblemInterface;
 use InvalidArgumentException;
@@ -28,16 +29,14 @@ use Random\Randomizer;
  * Deliberately simple relative to a production CMA-ES: eigendecomposition happens every generation
  * (skipping the usual "only every few generations" performance optimization, unnecessary at the
  * dimensionality this package's own tests and its origin project actually use — a handful to a few dozen
- * parameters) and there is no automatic restart/IPOP machinery. `maxIterations` is no longer the ONLY
+ * parameters), and this class itself has no restart/IPOP machinery. `maxIterations` is no longer the ONLY
  * stopping criterion, though: the standard early-termination set from Hansen's own tutorial and the
  * purecma/pycma reference implementations (TolX, TolXUp, ConditionCov, TolFun — see
- * {@see TerminationCriteria}) is checked every generation too, always on, no toggle. Deliberately not
- * IPOP/BIPOP restart machinery on top of that — those change what a caller's own evaluation-count budget
- * means (a restart resets and re-spends it), which is a real design tradeoff, not a strict improvement the
- * way stopping early on a converged/diverged/degenerate run is; that stays a still-open, separate decision
- * (see this package's own issue tracker), matching this project's "reviewable reference code over
- * sophistication" bias and this namespace's simple generation-count stopping rule elsewhere
- * (DifferentialEvolutionAlgorithm, RechenbergSchwefelEsAlgorithm).
+ * {@see TerminationCriteria}) is checked every generation too, always on, no toggle. IPOP-style restarting
+ * on a genuine plateau (TolFun) IS available, as a wrapper rather than built into this class — see
+ * {@see RestartingOptimizerDecorator}, which composes around any algorithm in this namespace instead of each
+ * needing its own bespoke version, and keeps a restart's evaluation-budget accounting an explicit, separate
+ * concern from this class's own single-run loop.
  */
 class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
 {
@@ -208,7 +207,11 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
                 array_shift($recentGenerationBestValues);
             }
 
-            if ($this->terminationCriteria->shouldTerminateEarly($sigma, $initialSigma, $eigenvalues, $recentGenerationBestValues, $fitnessHistoryLength)) {
+            $terminationReason = $this->terminationCriteria->shouldTerminateEarly($sigma, $initialSigma, $eigenvalues, $recentGenerationBestValues, $fitnessHistoryLength);
+
+            if ($terminationReason !== TerminationReason::NONE) {
+                $this->terminationReason = $terminationReason;
+
                 break;
             }
         }

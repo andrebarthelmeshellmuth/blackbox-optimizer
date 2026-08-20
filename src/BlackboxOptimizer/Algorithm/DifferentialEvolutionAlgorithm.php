@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace BlackboxOptimizer\Algorithm;
 
 use BlackboxOptimizer\Algorithm\Internal\TerminationCriteria;
+use BlackboxOptimizer\Algorithm\Internal\TerminationReason;
 use BlackboxOptimizer\Problem\ProblemInterface;
 use InvalidArgumentException;
 use Random\Randomizer;
@@ -200,13 +201,20 @@ class DifferentialEvolutionAlgorithm extends AbstractOptimizerAlgorithm
                 array_shift($recentGenerationBestValues);
             }
 
+            if ($this->hasPopulationCollapsed($population, $lowerBounds, $upperBounds)) {
+                // DE's own TolX-equivalent -- the population itself has converged, not a fitness plateau
+                // (see this class's own docblock for why those are different questions here).
+                $this->terminationReason = TerminationReason::TOL_X;
+
+                break;
+            }
+
             if (
-                $this->hasPopulationCollapsed($population, $lowerBounds, $upperBounds)
-                || (
-                    $this->hasFlatFitnessHistory($recentGenerationBestValues, $fitnessHistoryLength)
-                    && $this->hasConvergedPopulationFitness($populationValues)
-                )
+                $this->hasFlatFitnessHistory($recentGenerationBestValues, $fitnessHistoryLength)
+                && $this->hasConvergedPopulationFitness($populationValues)
             ) {
+                $this->terminationReason = TerminationReason::TOL_FUN;
+
                 break;
             }
         }

@@ -97,7 +97,7 @@ class TerminationCriteria
      * @param array<int, float> $recentGenerationBestValues
      * @param int $fitnessHistoryLength
      *
-     * @return bool
+     * @return \BlackboxOptimizer\Algorithm\Internal\TerminationReason
      */
     public function shouldTerminateEarly(
         float $sigma,
@@ -105,23 +105,25 @@ class TerminationCriteria
         array $sqrtEigenvalues,
         array $recentGenerationBestValues,
         int $fitnessHistoryLength,
-    ): bool {
+    ): TerminationReason {
         $maxSqrtEigenvalue = $this->arrayMax($sqrtEigenvalues);
         $minSqrtEigenvalue = max($this->arrayMin($sqrtEigenvalues), PHP_FLOAT_EPSILON);
 
         if ($sigma * $maxSqrtEigenvalue < static::TOL_X_FACTOR * $initialSigma) {
-            return true;
+            return TerminationReason::TOL_X;
         }
 
         if ($sigma * $maxSqrtEigenvalue > static::TOL_X_UP_FACTOR * $initialSigma) {
-            return true;
+            return TerminationReason::TOL_X_UP;
         }
 
         if (($maxSqrtEigenvalue / $minSqrtEigenvalue) ** 2 > static::CONDITION_NUMBER_LIMIT) {
-            return true;
+            return TerminationReason::CONDITION_COV;
         }
 
-        return $this->hasFlatFitnessHistory($recentGenerationBestValues, $fitnessHistoryLength);
+        return $this->hasFlatFitnessHistory($recentGenerationBestValues, $fitnessHistoryLength)
+            ? TerminationReason::TOL_FUN
+            : TerminationReason::NONE;
     }
 
     /**

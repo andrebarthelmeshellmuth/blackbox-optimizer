@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace BlackboxOptimizer\Algorithm;
 
 use BlackboxOptimizer\Algorithm\Internal\TerminationCriteria;
+use BlackboxOptimizer\Algorithm\Internal\TerminationReason;
 use BlackboxOptimizer\Problem\ProblemInterface;
 use InvalidArgumentException;
 use Random\Randomizer;
@@ -220,7 +221,11 @@ class RechenbergSchwefelEsAlgorithm extends AbstractOptimizerAlgorithm
 
             // A single-element [1.0] in place of CmaEsAlgorithm's per-dimension sqrt-eigenvalues array --
             // see this class's own docblock for why that's a correct, not approximate, degenerate case.
-            if ($this->terminationCriteria->shouldTerminateEarly($sigma, $initialSigma, [1.0], $recentGenerationBestValues, $fitnessHistoryLength)) {
+            $terminationReason = $this->terminationCriteria->shouldTerminateEarly($sigma, $initialSigma, [1.0], $recentGenerationBestValues, $fitnessHistoryLength);
+
+            if ($terminationReason !== TerminationReason::NONE) {
+                $this->terminationReason = $terminationReason;
+
                 break;
             }
         }

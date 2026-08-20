@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace BlackboxOptimizer\Algorithm;
 
+use BlackboxOptimizer\Algorithm\Internal\TerminationReason;
 use BlackboxOptimizer\Problem\ProblemInterface;
 use InvalidArgumentException;
 use Random\Randomizer;
@@ -57,6 +58,15 @@ abstract class AbstractOptimizerAlgorithm implements OptimizerAlgorithmInterface
      * @var array<int, float>
      */
     protected array $bestValueHistory = [];
+
+    /**
+     * Set by a concrete algorithm's own optimize() loop right before an early `break` -- left at its
+     * {@see resetTracking()} default of {@see TerminationReason::NONE} for a run that used its full
+     * iteration budget. See {@see buildResult()}.
+     *
+     * @var \BlackboxOptimizer\Algorithm\Internal\TerminationReason
+     */
+    protected TerminationReason $terminationReason = TerminationReason::NONE;
 
     /**
      * @param \Random\Randomizer|null $randomizer Injectable for deterministic tests; defaults to a real
@@ -334,6 +344,7 @@ abstract class AbstractOptimizerAlgorithm implements OptimizerAlgorithmInterface
         $this->bestValueSoFar = null;
         $this->bestVectorSoFar = [];
         $this->bestValueHistory = [];
+        $this->terminationReason = TerminationReason::NONE;
     }
 
     /**
@@ -346,6 +357,7 @@ abstract class AbstractOptimizerAlgorithm implements OptimizerAlgorithmInterface
             $this->bestValueSoFar ?? INF,
             $this->evaluationCount,
             $this->bestValueHistory,
+            $this->terminationReason,
         );
     }
 
