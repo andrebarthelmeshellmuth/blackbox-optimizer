@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace BlackboxOptimizerTest\Algorithm\Internal;
 
 use BlackboxOptimizer\Algorithm\Internal\TerminationCriteria;
+use BlackboxOptimizer\Algorithm\Internal\TerminationReason;
 use PHPUnit\Framework\TestCase;
 
 class TerminationCriteriaTest extends TestCase
@@ -42,7 +43,7 @@ class TerminationCriteriaTest extends TestCase
             fitnessHistoryLength: 14,
         );
 
-        $this->assertFalse($result);
+        $this->assertSame(TerminationReason::NONE, $result);
     }
 
     /**
@@ -62,7 +63,7 @@ class TerminationCriteriaTest extends TestCase
             fitnessHistoryLength: 14,
         );
 
-        $this->assertTrue($result);
+        $this->assertSame(TerminationReason::TOL_X, $result);
     }
 
     /**
@@ -82,7 +83,7 @@ class TerminationCriteriaTest extends TestCase
             fitnessHistoryLength: 14,
         );
 
-        $this->assertTrue($result);
+        $this->assertSame(TerminationReason::TOL_X_UP, $result);
     }
 
     /**
@@ -96,14 +97,18 @@ class TerminationCriteriaTest extends TestCase
         $terminationCriteria = new TerminationCriteria();
 
         $result = $terminationCriteria->shouldTerminateEarly(
+            // A spread of [1.0, 1.0E8] (rather than [1.0E8, 1.0]) would also blow sigma * maxSqrtEigenvalue
+            // past TolXUp's own threshold, triggering that check FIRST -- [1.0, 1.0E-8] isolates ConditionCov
+            // alone: max stays small enough to keep sigma * maxSqrtEigenvalue inside both TolX/TolXUp
+            // bounds, while (max/min)^2 = 1.0E16 still clears CONDITION_NUMBER_LIMIT (1.0E14).
             sigma: 1.0,
             initialSigma: 1.0,
-            sqrtEigenvalues: [1.0E8, 1.0],
+            sqrtEigenvalues: [1.0, 1.0E-8],
             recentGenerationBestValues: [],
             fitnessHistoryLength: 14,
         );
 
-        $this->assertTrue($result);
+        $this->assertSame(TerminationReason::CONDITION_COV, $result);
     }
 
     /**
@@ -123,7 +128,7 @@ class TerminationCriteriaTest extends TestCase
             fitnessHistoryLength: 14,
         );
 
-        $this->assertTrue($result);
+        $this->assertSame(TerminationReason::TOL_FUN, $result);
     }
 
     /**
@@ -145,6 +150,6 @@ class TerminationCriteriaTest extends TestCase
             fitnessHistoryLength: 14,
         );
 
-        $this->assertFalse($result);
+        $this->assertSame(TerminationReason::NONE, $result);
     }
 }

@@ -69,6 +69,14 @@ class CmaEsAlgorithmTest extends TestCase
     /**
      * @return void
      */
+    public function testExposesTheSameSafetyIterationCeilingItsOwnTrustTerminationCriteriaModeUses(): void
+    {
+        $this->assertSame(10000, $this->createAlgorithm()->getSafetyIterationCeiling());
+    }
+
+    /**
+     * @return void
+     */
     public function testEstimateEvaluationCountRequiresAnExplicitPopulationSize(): void
     {
         // Arrange

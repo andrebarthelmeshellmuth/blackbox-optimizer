@@ -77,6 +77,14 @@ class DifferentialEvolutionAlgorithmTest extends TestCase
     }
 
     /**
+     * @return void
+     */
+    public function testExposesTheSameSafetyIterationCeilingItsOwnTrustTerminationCriteriaModeUses(): void
+    {
+        $this->assertSame(10000, $this->createAlgorithm()->getSafetyIterationCeiling());
+    }
+
+    /**
      * Unlike CMA-ES, DE has a fixed default population size, so estimateEvaluationCount() works even
      * without an explicit setPopulationSize() call.
      *

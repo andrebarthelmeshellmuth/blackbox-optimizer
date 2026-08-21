@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace BlackboxOptimizer\Algorithm;
 
 use BlackboxOptimizer\Algorithm\Internal\TerminationCriteria;
+use BlackboxOptimizer\Algorithm\Internal\TerminationReason;
 use BlackboxOptimizer\Problem\ProblemInterface;
 use InvalidArgumentException;
 use Random\Randomizer;
@@ -96,13 +97,6 @@ class RechenbergSchwefelEsAlgorithm extends AbstractOptimizerAlgorithm
      * @var float
      */
     protected const MIN_STEP_WIDTH = 1.0E-10;
-
-    /**
-     * See {@see CmaEsAlgorithm::SAFETY_ITERATION_CEILING} -- same role, same value, same reasoning.
-     *
-     * @var int
-     */
-    protected const SAFETY_ITERATION_CEILING = 10000;
 
     /**
      * @var int|null
@@ -220,7 +214,11 @@ class RechenbergSchwefelEsAlgorithm extends AbstractOptimizerAlgorithm
 
             // A single-element [1.0] in place of CmaEsAlgorithm's per-dimension sqrt-eigenvalues array --
             // see this class's own docblock for why that's a correct, not approximate, degenerate case.
-            if ($this->terminationCriteria->shouldTerminateEarly($sigma, $initialSigma, [1.0], $recentGenerationBestValues, $fitnessHistoryLength)) {
+            $terminationReason = $this->terminationCriteria->shouldTerminateEarly($sigma, $initialSigma, [1.0], $recentGenerationBestValues, $fitnessHistoryLength);
+
+            if ($terminationReason !== TerminationReason::NONE) {
+                $this->terminationReason = $terminationReason;
+
                 break;
             }
         }
