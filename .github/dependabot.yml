@@ -1,0 +1,20 @@
+version: 2
+updates:
+  # Keeps pinned Actions (actions/checkout, shivammathur/setup-php, etc.) current.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # spryker-community/* and andrebarthelmeshellmuth/* aren't on Packagist, so Dependabot can't
+  # resolve them here — ignoring them keeps it from erroring out on the whole composer graph.
+  # Real Packagist deps (spryker/*, symfony/*, etc.) are still tracked normally.
+  - package-ecosystem: "composer"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    ignore:
+      - dependency-name: "spryker-community/*"
+      - dependency-name: "andrebarthelmeshellmuth/*"
