@@ -243,12 +243,21 @@ Restart 2: population 40, 12 generations, budget exhausted, best 0.7910
 is a matter of formatting that list — see `spryker-community/search-ranking-optimizer`'s own optimization-run
 GUI for a worked example.
 
-`RestartingOptimizerDecorator` does not support `trustTerminationCriteria()` (it throws `LogicException`):
-that mode would let each restart run out to the inner algorithm's own internal safety ceiling instead of the
-budget `setPopulationSize()`/`setMaxIterations()` define here, silently blowing past this decorator's own
-accounting. The decorator's restart-on-plateau mechanism is this package's answer to the same underlying
-need — "don't give up just because one fixed generation count ran out" — scoped to a budget the caller
-actually chose instead.
+**Not a substitute for `trustTerminationCriteria()` — the two fix different failure modes.**
+`trustTerminationCriteria()` helps a run that is still genuinely improving but would otherwise be cut off by
+a too-small fixed generation count: it doesn't change *where* the search goes, only how long it's allowed to
+keep going. Restart-on-plateau helps the opposite case: a run that has already stopped improving
+(`TerminationReason::TOL_FUN` specifically) and may have landed in a mediocre local optimum — by definition
+of TolFun, there is no local gradient left to chase there, so simply allowing more generations at that same
+point would not help; only a fresh starting point can. A run that's still actively converging never
+triggers TolFun in the first place, so restarting never fires for it either — the two mechanisms don't
+overlap in which runs they actually change.
+
+They're still mutually exclusive, but for an unrelated, purely mechanical reason: `RestartingOptimizerDecorator`
+does not support `trustTerminationCriteria()` (it throws `LogicException`) because that mode would let each
+restart run out to the inner algorithm's own internal safety ceiling instead of the budget
+`setPopulationSize()`/`setMaxIterations()` define here, silently blowing past this decorator's own
+accounting.
 
 ## Warm start
 
