@@ -148,4 +148,21 @@ interface OptimizerAlgorithmInterface
      * @return static
      */
     public function setMaxIterations(int $maxIterations): static;
+
+    /**
+     * The generous internal iteration ceiling this algorithm falls back to once
+     * {@see trustTerminationCriteria()} is on, instead of a fixed {@see setMaxIterations()} budget -- see
+     * that method's own docblock. Large enough that reaching it signals something genuinely pathological
+     * about the objective, never a normal outcome; a real, finite bound rather than a literal unbounded
+     * loop, since the early-termination criteria this package checks are standard heuristics, not a formal
+     * termination guarantee for an arbitrary black-box objective.
+     *
+     * Exposed (rather than kept a private implementation detail) so a caller composing AROUND this
+     * algorithm -- e.g. {@see \BlackboxOptimizer\Algorithm\RestartingOptimizerDecorator}'s own
+     * `trustRestartBudget()` -- can build its own "trust" semantics from this algorithm's actual number
+     * instead of hardcoding a guess that could drift out of sync with it.
+     *
+     * @return int
+     */
+    public function getSafetyIterationCeiling(): int;
 }

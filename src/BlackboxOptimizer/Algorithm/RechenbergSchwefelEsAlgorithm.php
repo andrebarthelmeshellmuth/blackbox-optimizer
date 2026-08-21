@@ -99,13 +99,6 @@ class RechenbergSchwefelEsAlgorithm extends AbstractOptimizerAlgorithm
     protected const MIN_STEP_WIDTH = 1.0E-10;
 
     /**
-     * See {@see CmaEsAlgorithm::SAFETY_ITERATION_CEILING} -- same role, same value, same reasoning.
-     *
-     * @var int
-     */
-    protected const SAFETY_ITERATION_CEILING = 10000;
-
-    /**
      * @var int|null
      */
     protected ?int $parentCount = null;

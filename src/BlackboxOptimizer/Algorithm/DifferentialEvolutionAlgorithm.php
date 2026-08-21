@@ -88,13 +88,6 @@ class DifferentialEvolutionAlgorithm extends AbstractOptimizerAlgorithm
     protected const TOL_FUN = 1.0E-12;
 
     /**
-     * See {@see CmaEsAlgorithm::SAFETY_ITERATION_CEILING} -- same role, same value, same reasoning.
-     *
-     * @var int
-     */
-    protected const SAFETY_ITERATION_CEILING = 10000;
-
-    /**
      * @var float
      */
     protected float $crossoverProbability = self::DEFAULT_CROSSOVER_PROBABILITY;

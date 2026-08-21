@@ -68,6 +68,14 @@ class RechenbergSchwefelEsAlgorithmTest extends TestCase
     }
 
     /**
+     * @return void
+     */
+    public function testExposesTheSameSafetyIterationCeilingItsOwnTrustTerminationCriteriaModeUses(): void
+    {
+        $this->assertSame(10000, $this->createAlgorithm()->getSafetyIterationCeiling());
+    }
+
+    /**
      * Reuses {@see \BlackboxOptimizer\Algorithm\RechenbergSchwefelEsAlgorithm::resolveParentCount()}
      * directly, so this is really a test that estimateEvaluationCount() and optimize() are computing the
      * initial batch size the exact same way, not two independent copies of the mu/lambda ~ 1/7 formula.

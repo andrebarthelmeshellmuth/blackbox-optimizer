@@ -98,6 +98,14 @@ final class ScriptedOptimizerAlgorithm implements OptimizerAlgorithmInterface
     }
 
     /**
+     * @return int
+     */
+    public function getSafetyIterationCeiling(): int
+    {
+        return 10000;
+    }
+
+    /**
      * @param array<int, float> $vector
      * @param float $fraction
      *

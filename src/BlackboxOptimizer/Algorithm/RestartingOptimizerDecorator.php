@@ -29,24 +29,27 @@ use Random\Randomizer;
  *
  * Budget discipline: the TOTAL evaluation budget across every restart is fixed up front, at exactly
  * `populationSize * maxIterations` -- the same number a single, non-restarting {@see setPopulationSize()}/
- * {@see setMaxIterations()} call already means today. A restart's own population size doubles each time
- * (classic IPOP), which is what actually bounds the restart COUNT: growth is geometric, so even a modest
- * budget only buys a handful of restarts before the next doubled population can no longer be afforded, at
- * which point this decorator stops and returns the best candidate found across every restart -- never more
- * evaluations than the original budget promised, and never fewer restarts than that budget can actually pay
- * for.
+ * {@see setMaxIterations()} call already means today (or, with {@see trustRestartBudget()}, `populationSize
+ * * getSafetyIterationCeiling()` instead -- see that method's own docblock). A restart's own population size
+ * doubles each time (classic IPOP), which is what actually bounds the restart COUNT: growth is geometric, so
+ * even a modest budget only buys a handful of restarts before the next doubled population can no longer be
+ * afforded, at which point this decorator stops and returns the best candidate found across every restart --
+ * never more evaluations than the budget in effect promised, and never fewer restarts than that budget can
+ * actually pay for.
  *
- * Deliberately does NOT support {@see trustTerminationCriteria()} -- that mode replaces a caller's own
- * `maxIterations` with each algorithm's internal safety ceiling (thousands of generations), which would
- * silently blow through this decorator's own budget arithmetic on every restart. This decorator's own
- * restart-on-plateau mechanism already IS "trust the termination criteria, but bounded" — see that method's
- * override here for the details.
+ * Deliberately does NOT support {@see trustTerminationCriteria()} (it throws) -- that mode replaces a
+ * caller's own `maxIterations` with each algorithm's internal safety ceiling directly on the INNER
+ * algorithm, bypassing this decorator's own per-restart accounting entirely. {@see trustRestartBudget()} is
+ * this decorator's own, budget-aware answer to the same underlying need -- see that method's own docblock
+ * for why the two are not the same thing wearing different names.
  */
 final class RestartingOptimizerDecorator implements OptimizerAlgorithmInterface
 {
     private ?int $initialPopulationSize = null;
 
     private ?int $maxGenerationsPerRestart = null;
+
+    private bool $trustRestartBudget = false;
 
     private Randomizer $randomizer;
 
@@ -87,25 +90,25 @@ final class RestartingOptimizerDecorator implements OptimizerAlgorithmInterface
      *
      * @param \BlackboxOptimizer\Problem\ProblemInterface $problem
      *
-     * @throws \InvalidArgumentException When {@see setPopulationSize()}/{@see setMaxIterations()} were never
-     *   called -- unlike the inner algorithms, this decorator has no fallback default: the restart budget IS
-     *   `populationSize * maxIterations`, so both are required to know what that budget even is.
+     * @throws \InvalidArgumentException When {@see setPopulationSize()} was never called, or when neither
+     *   {@see setMaxIterations()} nor {@see trustRestartBudget()} was -- unlike the inner algorithms, this
+     *   decorator has no fallback default: it needs to know the total restart budget from ONE of those two
+     *   sources before it can do anything.
      *
      * @return \BlackboxOptimizer\Algorithm\OptimizationResult
      */
     public function optimize(ProblemInterface $problem): OptimizationResult
     {
-        if ($this->initialPopulationSize === null || $this->maxGenerationsPerRestart === null) {
+        if ($this->initialPopulationSize === null) {
             throw new InvalidArgumentException(
-                'RestartingOptimizerDecorator requires both setPopulationSize() and setMaxIterations() to be '
-                . 'called -- the total restart budget is populationSize * maxIterations, with no fallback '
+                'RestartingOptimizerDecorator requires setPopulationSize() to be called -- with no fallback '
                 . 'default the way a single inner algorithm run might have.',
             );
         }
 
+        $totalBudget = $this->resolveTotalBudget($this->initialPopulationSize);
         [$lowerBounds, $upperBounds] = $this->extractBounds($problem);
 
-        $totalBudget = $this->initialPopulationSize * $this->maxGenerationsPerRestart;
         $remainingBudget = $totalBudget;
         $currentPopulationSize = $this->initialPopulationSize;
         $restartIndex = 0;
@@ -122,6 +125,12 @@ final class RestartingOptimizerDecorator implements OptimizerAlgorithmInterface
                 $this->innerAlgorithm->setWarmStart($this->drawRandomVector($lowerBounds, $upperBounds), 1.0);
             }
 
+            // Deliberately not clamped against $this->maxGenerationsPerRestart -- doing so would be a no-op
+            // in the (default) fixed-budget mode (that budget is ITSELF populationSize * maxGenerationsPerRestart,
+            // so this quotient can never exceed it: restart 0 gets exactly maxGenerationsPerRestart, and
+            // every later restart strictly less, since population only grows and remaining budget only
+            // shrinks), and in trustRestartBudget() mode there is no $maxGenerationsPerRestart to clamp
+            // against in the first place -- that's the whole point of that mode.
             $generationsAllowed = intdiv($remainingBudget, $currentPopulationSize);
 
             if ($generationsAllowed < 1) {
@@ -129,7 +138,7 @@ final class RestartingOptimizerDecorator implements OptimizerAlgorithmInterface
             }
 
             $this->innerAlgorithm->setPopulationSize($currentPopulationSize);
-            $this->innerAlgorithm->setMaxIterations(min($this->maxGenerationsPerRestart, $generationsAllowed));
+            $this->innerAlgorithm->setMaxIterations($generationsAllowed);
 
             $result = $this->innerAlgorithm->optimize($problem);
 
@@ -149,7 +158,7 @@ final class RestartingOptimizerDecorator implements OptimizerAlgorithmInterface
             $restartHistory[] = new RestartHistoryEntry(
                 $restartIndex,
                 $currentPopulationSize,
-                min($this->maxGenerationsPerRestart, $generationsAllowed),
+                $generationsAllowed,
                 count($result->getBestValueHistory()),
                 $finalTerminationReason,
                 $result->getBestValue(),
@@ -180,33 +189,32 @@ final class RestartingOptimizerDecorator implements OptimizerAlgorithmInterface
      *
      * The total restart budget itself -- see this class's own docblock for why that, not a per-restart
      * estimate, is the honest answer: this decorator guarantees it never exceeds this number, however many
-     * restarts actually happen within it.
+     * restarts actually happen within it. Reflects {@see trustRestartBudget()} when that's in effect, same
+     * as {@see optimize()} itself.
      *
-     * @throws \InvalidArgumentException When {@see setPopulationSize()}/{@see setMaxIterations()} were never
-     *   called.
+     * @throws \InvalidArgumentException When {@see setPopulationSize()} was never called, or when neither
+     *   {@see setMaxIterations()} nor {@see trustRestartBudget()} was.
      *
      * @return int
      */
     public function estimateEvaluationCount(): int
     {
-        if ($this->initialPopulationSize === null || $this->maxGenerationsPerRestart === null) {
+        if ($this->initialPopulationSize === null) {
             throw new InvalidArgumentException(
-                'RestartingOptimizerDecorator requires both setPopulationSize() and setMaxIterations() to be '
-                . 'called before estimateEvaluationCount() -- see optimize()\'s own exception for why.',
+                'RestartingOptimizerDecorator requires setPopulationSize() to be called -- with no fallback '
+                . 'default the way a single inner algorithm run might have.',
             );
         }
 
-        return $this->initialPopulationSize * $this->maxGenerationsPerRestart;
+        return $this->resolveTotalBudget($this->initialPopulationSize);
     }
 
     /**
      * {@inheritDoc}
      *
-     * Deliberately unsupported -- see this class's own docblock for why trusting each algorithm's internal
-     * safety ceiling instead of a fixed `maxIterations` would blow through this decorator's own budget
-     * arithmetic. This decorator's restart-on-plateau mechanism is already this package's answer to the same
-     * underlying need ("don't stop the search just because one fixed generation count ran out"), scoped to
-     * a budget the caller actually chose.
+     * Deliberately unsupported -- see this class's own docblock for why trusting the INNER algorithm's own
+     * safety ceiling directly, bypassing this decorator entirely, would blow through this decorator's own
+     * per-restart accounting. {@see trustRestartBudget()} is this decorator's own, budget-aware equivalent.
      *
      * @throws \LogicException Always.
      *
@@ -216,10 +224,91 @@ final class RestartingOptimizerDecorator implements OptimizerAlgorithmInterface
     {
         throw new LogicException(
             'RestartingOptimizerDecorator does not support trustTerminationCriteria() -- it would let each '
-            . 'restart run out to the inner algorithm\'s own safety ceiling instead of the budget this '
-            . 'decorator\'s setPopulationSize()/setMaxIterations() define. Call setMaxIterations() with the '
-            . 'generation budget you actually want instead.',
+            . 'restart run out to the inner algorithm\'s own safety ceiling directly, bypassing this '
+            . 'decorator\'s own per-restart accounting entirely. Call trustRestartBudget() instead -- it '
+            . 'gives every restart that same generous ceiling, but keeps the decorator\'s own bookkeeping in '
+            . 'the loop so restarts still stay bounded and reported the normal way.',
         );
+    }
+
+    /**
+     * Opts into a MUCH larger total restart budget -- `populationSize * getSafetyIterationCeiling()`
+     * (the inner algorithm's own generous internal ceiling, the same one {@see trustTerminationCriteria()}
+     * uses for a single, non-restarting run) instead of `populationSize * maxIterations` (a caller-chosen,
+     * typically much smaller number). Makes {@see setMaxIterations()} optional (and, if still called,
+     * ignored) -- mirroring how a plain algorithm's own `trustTerminationCriteria()` already makes ITS
+     * `setMaxIterations()` call irrelevant.
+     *
+     * Why this genuinely differs from just raising a per-restart ceiling on its own (a fix that would do
+     * NOTHING under the default budget): every restart's own ceiling is `min(ceiling, remainingBudget /
+     * currentPopulationSize)`, and under the default budget (`populationSize * maxIterations`), restart 0's
+     * own `remainingBudget / populationSize` is EXACTLY `maxIterations` by construction -- a separate,
+     * larger ceiling constant would never be the smaller side of that `min()`, so it would never actually
+     * bind. Growing the TOTAL budget itself (this method) is what actually gives restart 0 (and, via the
+     * same shrinking-quotient math as every other restart, every restart after it) real room: restart 0 gets
+     * up to `getSafetyIterationCeiling()` generations, a doubled-population restart 1 gets roughly half that,
+     * restart 2 roughly a quarter, and so on -- the exact same self-limiting shape this decorator already
+     * has, just seeded from a far larger starting number.
+     *
+     * The tradeoff, same one `trustTerminationCriteria()` already makes for a single run: the strong
+     * "total evaluations never exceed what you configured" guarantee this decorator otherwise offers is
+     * replaced by a much looser one -- bounded by `getSafetyIterationCeiling()`, not by a number the caller
+     * chose. A run that never triggers any of TolX/TolXUp/ConditionCov/TolFun at any restart could
+     * genuinely use close to that much budget before this decorator gives up.
+     *
+     * @return static
+     */
+    public function trustRestartBudget(): static
+    {
+        $this->trustRestartBudget = true;
+
+        return $this;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * Forwarded to the inner algorithm as-is -- this decorator has no ceiling of its own distinct from the
+     * one the algorithm it wraps would use.
+     *
+     * @return int
+     */
+    public function getSafetyIterationCeiling(): int
+    {
+        return $this->innerAlgorithm->getSafetyIterationCeiling();
+    }
+
+    /**
+     * @throws \InvalidArgumentException When {@see setPopulationSize()} was never called, or when neither
+     *   {@see setMaxIterations()} nor {@see trustRestartBudget()} was.
+     *
+     * @return int
+     */
+    /**
+     * @param int $populationSize The caller's already-validated {@see setPopulationSize()} value -- taken
+     *   as a parameter (not read from `$this->initialPopulationSize` directly) purely so static analysis
+     *   can see it's non-null at every call site, each of which already checked that itself.
+     *
+     * @throws \InvalidArgumentException When neither {@see setMaxIterations()} nor {@see trustRestartBudget()}
+     *   was called.
+     *
+     * @return int
+     */
+    private function resolveTotalBudget(int $populationSize): int
+    {
+        if ($this->trustRestartBudget) {
+            return $populationSize * $this->innerAlgorithm->getSafetyIterationCeiling();
+        }
+
+        if ($this->maxGenerationsPerRestart === null) {
+            throw new InvalidArgumentException(
+                'RestartingOptimizerDecorator requires either setMaxIterations() or trustRestartBudget() to '
+                . 'be called -- the total restart budget is populationSize * one of those two, with no '
+                . 'fallback default the way a single inner algorithm run might have.',
+            );
+        }
+
+        return $populationSize * $this->maxGenerationsPerRestart;
     }
 
     /**
@@ -281,10 +370,13 @@ final class RestartingOptimizerDecorator implements OptimizerAlgorithmInterface
     /**
      * {@inheritDoc}
      *
-     * The per-restart generation cap -- together with {@see setPopulationSize()}, defines the total restart
-     * budget (`populationSize * maxIterations`). A later restart may be capped BELOW this, when the
-     * remaining budget can't afford a full allowance at its (larger, doubled) population size -- see
-     * {@see RestartHistoryEntry::getGenerationsAllowed()}.
+     * Together with {@see setPopulationSize()}, defines the total restart budget (`populationSize *
+     * maxIterations`) -- unless {@see trustRestartBudget()} is used instead, in which case this value is
+     * still stored (calling this first, then trustRestartBudget(), is harmless) but ignored when computing
+     * the budget, the same way a plain algorithm's own `trustTerminationCriteria()` already ignores its
+     * `setMaxIterations()`. Restart 0 gets exactly this many generations; every restart after that gets
+     * strictly less, since the remaining budget shrinks while the (doubled) population it's divided by
+     * grows -- see {@see RestartHistoryEntry::getGenerationsAllowed()}.
      *
      * @param int $maxIterations
      *

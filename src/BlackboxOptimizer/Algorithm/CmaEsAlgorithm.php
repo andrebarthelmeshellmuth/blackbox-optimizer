@@ -51,18 +51,6 @@ class CmaEsAlgorithm extends AbstractOptimizerAlgorithm
     protected const DEFAULT_MAX_ITERATIONS = 200;
 
     /**
-     * The ceiling used instead of {@see DEFAULT_MAX_ITERATIONS}/a caller's own {@see setMaxIterations()}
-     * once {@see trustTerminationCriteria()} is on -- large enough that reaching it signals something
-     * genuinely pathological about the objective (see that method's own docblock), never a normal outcome.
-     * Still a real, finite bound: {@see TerminationCriteria}'s own four criteria are the standard
-     * heuristics from Hansen's tutorial, not a formal termination guarantee for an arbitrary black-box
-     * function, so a hard ceiling stays in place even in this mode.
-     *
-     * @var int
-     */
-    protected const SAFETY_ITERATION_CEILING = 10000;
-
-    /**
      * @var array<int, float>|null
      */
     protected ?array $initialMean = null;

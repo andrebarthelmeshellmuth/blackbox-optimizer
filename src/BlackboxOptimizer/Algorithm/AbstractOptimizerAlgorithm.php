@@ -28,6 +28,18 @@ use Random\Randomizer;
  */
 abstract class AbstractOptimizerAlgorithm implements OptimizerAlgorithmInterface
 {
+    /**
+     * The ceiling {@see trustTerminationCriteria()} switches to instead of {@see DEFAULT_MAX_ITERATIONS}/a
+     * caller's own {@see setMaxIterations()} -- see {@see getSafetyIterationCeiling()}'s own docblock for
+     * why this lives here, shared, rather than duplicated per concrete algorithm. A concrete subclass that
+     * genuinely needs a different value can still redeclare this same constant name -- `static::` resolution
+     * in {@see getSafetyIterationCeiling()} (and in each concrete algorithm's own `optimize()`) picks up the
+     * override correctly.
+     *
+     * @var int
+     */
+    protected const SAFETY_ITERATION_CEILING = 10000;
+
     protected Randomizer $randomizer;
 
     protected ?float $stepWidth = null;
@@ -141,6 +153,23 @@ abstract class AbstractOptimizerAlgorithm implements OptimizerAlgorithmInterface
         $this->trustTerminationCriteria = true;
 
         return $this;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * Shared here (rather than duplicated per concrete algorithm, the way {@see CmaEsAlgorithm}/
+     * {@see RechenbergSchwefelEsAlgorithm}/{@see DifferentialEvolutionAlgorithm} each still keep their own
+     * DEFAULT_STEP_WIDTH/DEFAULT_MAX_ITERATIONS/DEFAULT_POPULATION_SIZE constants, since those genuinely
+     * differ by algorithm) because every shipped algorithm already used the exact same value for the exact
+     * same reason -- a single shared constant here is what an algorithm-specific override of
+     * {@see SAFETY_ITERATION_CEILING} in a concrete subclass would still correctly change, via `static::`.
+     *
+     * @return int
+     */
+    public function getSafetyIterationCeiling(): int
+    {
+        return static::SAFETY_ITERATION_CEILING;
     }
 
     /**

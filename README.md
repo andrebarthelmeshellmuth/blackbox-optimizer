@@ -30,6 +30,7 @@ here once it became clear nothing about the optimization core actually depended 
 - [Choosing an algorithm](#choosing-an-algorithm)
 - [Early termination](#early-termination)
 - [Restarting on a plateau](#restarting-on-a-plateau)
+  - [Combining both: `trustRestartBudget()`](#combining-both-trustrestartbudget)
 - [Warm start](#warm-start)
 - [Expressing constraints beyond a box](#expressing-constraints-beyond-a-box)
 - [Relationship to search-ranking-optimizer](#relationship-to-search-ranking-optimizer)
@@ -98,6 +99,7 @@ interface OptimizerAlgorithmInterface
     public function setStepWidth(float $stepWidth): static;
     public function setPopulationSize(int $populationSize): static;
     public function setMaxIterations(int $maxIterations): static;
+    public function getSafetyIterationCeiling(): int;
 }
 ```
 
@@ -122,6 +124,13 @@ have a fixed default and don't need it.
 **`trustTerminationCriteria()`** — opts into each algorithm's own convergence/divergence/plateau detection
 instead of a fixed `setMaxIterations()` budget; see [Early termination](#early-termination) for the full
 per-algorithm detail.
+
+**`getSafetyIterationCeiling()`** — the generous internal ceiling `trustTerminationCriteria()` switches to;
+every shipped algorithm currently returns 10,000. Exposed as part of the interface (not kept a private
+implementation detail) specifically so a caller composing AROUND an algorithm —
+[`RestartingOptimizerDecorator`](#restarting-on-a-plateau)'s own `trustRestartBudget()` is the one example in
+this package — can build its own "trust" semantics from the real number instead of hardcoding a guess that
+could drift out of sync with it.
 
 **`setWarmStart()`** — seeds the search from an existing point instead of starting cold; see
 [Warm start](#warm-start) for the full per-algorithm detail.
@@ -253,11 +262,44 @@ point would not help; only a fresh starting point can. A run that's still active
 triggers TolFun in the first place, so restarting never fires for it either — the two mechanisms don't
 overlap in which runs they actually change.
 
-They're still mutually exclusive, but for an unrelated, purely mechanical reason: `RestartingOptimizerDecorator`
-does not support `trustTerminationCriteria()` (it throws `LogicException`) because that mode would let each
-restart run out to the inner algorithm's own internal safety ceiling instead of the budget
-`setPopulationSize()`/`setMaxIterations()` define here, silently blowing past this decorator's own
-accounting.
+Calling `trustTerminationCriteria()` directly on the decorator (rather than on the algorithm it wraps) still
+throws `LogicException` — that would let each restart run out to the inner algorithm's own internal safety
+ceiling *directly*, bypassing this decorator's own per-restart accounting entirely, which is a different
+(and unsafe) thing from what's described below.
+
+### Combining both: `trustRestartBudget()`
+
+```php
+$restarting = new RestartingOptimizerDecorator(new CmaEsAlgorithm());
+$restarting->setPopulationSize(10)->trustRestartBudget();
+
+$result = $restarting->optimize($problem);
+```
+
+`trustRestartBudget()` gives every restart the SAME generous ceiling `trustTerminationCriteria()` gives a
+single run — `getSafetyIterationCeiling()` generations — instead of a caller-chosen `maxIterations`. It's the
+answer to "why not just let each restart run as long as it needs, the way trust mode does for one run?" —
+which turns out to need a bit more than a bigger ceiling constant.
+
+**Why a separate, bigger per-restart ceiling on its own would do nothing.** Every restart's actual ceiling is
+`min(ceiling, remainingBudget / currentPopulationSize)`. Under the default budget (`populationSize *
+maxIterations`), restart 0's own `remainingBudget / populationSize` is EXACTLY `maxIterations` by
+construction — so a separate, larger ceiling constant would never be the smaller side of that `min()`, and
+would never actually bind, for restart 0 or any restart after it. `trustRestartBudget()` instead grows the
+TOTAL budget itself, to `populationSize * getSafetyIterationCeiling()` — that's what actually gives restart 0
+real room (up to the full safety ceiling), and, via the exact same shrinking-quotient math every restart
+already uses, every restart after it too: a doubled-population restart 1 gets roughly half that ceiling,
+restart 2 roughly a quarter, and so on — the same self-limiting shape [Restarting on a plateau](#restarting-on-a-plateau)
+already has, just seeded from a far larger starting number instead of a caller-chosen one.
+
+**The tradeoff** is the same one `trustTerminationCriteria()` already makes for a single run: the strong
+"total evaluations never exceed what you configured" guarantee `setMaxIterations()` otherwise gives this
+decorator is replaced by a much looser one — bounded by `getSafetyIterationCeiling()` (not a number the
+caller chose), and reachable per restart, not just once. A run where every restart happens to run its full
+course without ever triggering TolX/TolXUp/ConditionCov/TolFun could use close to that much budget more than
+once before the decorator finally gives up (when the next doubled population can no longer be afforded).
+`setMaxIterations()` becomes optional (and, if still called, ignored) once `trustRestartBudget()` is on —
+mirroring how a plain algorithm's own `trustTerminationCriteria()` already ignores its `setMaxIterations()`.
 
 ## Warm start
 
@@ -348,7 +390,8 @@ an algorithm, build a `Problem`, call `optimize()`.
   see [Restarting on a plateau](#restarting-on-a-plateau). Early termination itself is a set of standard
   heuristics, not a formal termination guarantee for an arbitrary objective — `trustTerminationCriteria()`
   still keeps a real, generous safety ceiling rather than looping forever, and `RestartingOptimizerDecorator`
-  keeps its own restart budget just as bounded.
+  keeps its own restart budget just as bounded by default (looser, but still bounded, if
+  [`trustRestartBudget()`](#combining-both-trustrestartbudget) is used instead).
 - **`Integer` parameters are declared, not enforced.** `ParameterType::Integer` exists so a `Problem` can
   honestly describe an integer dimension, but no shipped algorithm currently rounds a candidate to the
   nearest integer for it — all three operate on plain continuous floats throughout.

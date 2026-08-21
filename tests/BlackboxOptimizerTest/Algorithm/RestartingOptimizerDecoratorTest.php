@@ -270,4 +270,98 @@ class RestartingOptimizerDecoratorTest extends TestCase
             $this->assertLessThanOrEqual(1.0, $value);
         }
     }
+
+    /**
+     * @return void
+     */
+    public function testGetSafetyIterationCeilingForwardsToTheInnerAlgorithm(): void
+    {
+        $decorator = new RestartingOptimizerDecorator(new ScriptedOptimizerAlgorithm([]));
+
+        $this->assertSame(10000, $decorator->getSafetyIterationCeiling());
+    }
+
+    /**
+     * @return void
+     */
+    public function testOptimizeAcceptsTrustRestartBudgetInPlaceOfMaxIterations(): void
+    {
+        $inner = new ScriptedOptimizerAlgorithm([
+            new OptimizationResult([1.0, 1.0], 5.0, 20, [5.0], TerminationReason::TOL_X),
+        ]);
+
+        // No setMaxIterations() call at all -- trustRestartBudget() alone must be enough.
+        $result = (new RestartingOptimizerDecorator($inner))
+            ->setPopulationSize(10)
+            ->trustRestartBudget()
+            ->optimize($this->createProblem());
+
+        $this->assertSame(5.0, $result->getBestValue());
+    }
+
+    /**
+     * @return void
+     */
+    public function testEstimateEvaluationCountUsesTheSafetyIterationCeilingUnderTrustRestartBudget(): void
+    {
+        $decorator = (new RestartingOptimizerDecorator(new ScriptedOptimizerAlgorithm([])))
+            ->setPopulationSize(10)
+            ->trustRestartBudget();
+
+        // ScriptedOptimizerAlgorithm::getSafetyIterationCeiling() returns 10000 -- see its own definition.
+        $this->assertSame(100000, $decorator->estimateEvaluationCount());
+    }
+
+    /**
+     * The central claim {@see RestartingOptimizerDecorator::trustRestartBudget()}'s own docblock makes:
+     * restart 0's own ceiling is the FULL safety-iteration-ceiling number, not a caller-chosen (typically
+     * much smaller) maxIterations -- a plain, separate "raise the per-restart ceiling" constant could never
+     * achieve this under the default budget, since restart 0's own remainingBudget/populationSize is
+     * EXACTLY maxIterations by construction there (see that method's own docblock for the full argument).
+     *
+     * @return void
+     */
+    public function testTrustRestartBudgetGivesTheFirstRestartTheFullSafetyCeilingAsItsOwnMaxIterations(): void
+    {
+        $inner = new ScriptedOptimizerAlgorithm([
+            new OptimizationResult([1.0, 1.0], 5.0, 20, [5.0], TerminationReason::TOL_X),
+        ]);
+
+        (new RestartingOptimizerDecorator($inner))
+            ->setPopulationSize(10)
+            ->trustRestartBudget()
+            ->optimize($this->createProblem());
+
+        $this->assertSame([10000], $inner->maxIterationsSeen);
+    }
+
+    /**
+     * A `setMaxIterations()` call before `trustRestartBudget()` must not leak into the budget calculation --
+     * mirroring how a plain algorithm's own `trustTerminationCriteria()` already ignores its own
+     * `setMaxIterations()`.
+     *
+     * @return void
+     */
+    public function testTrustRestartBudgetIgnoresAPreviouslySetMaxIterations(): void
+    {
+        $decorator = (new RestartingOptimizerDecorator(new ScriptedOptimizerAlgorithm([])))
+            ->setPopulationSize(10)
+            ->setMaxIterations(5)
+            ->trustRestartBudget();
+
+        $this->assertSame(100000, $decorator->estimateEvaluationCount());
+    }
+
+    /**
+     * @return void
+     */
+    public function testOptimizeThrowsWhenNeitherMaxIterationsNorTrustRestartBudgetWasSet(): void
+    {
+        $decorator = (new RestartingOptimizerDecorator(new ScriptedOptimizerAlgorithm([])))
+            ->setPopulationSize(10);
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $decorator->optimize($this->createProblem());
+    }
 }
