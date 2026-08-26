@@ -434,6 +434,12 @@ introduced in adapting it to PHP are mine alone. See his [CMA-ES tutorial](https
 for the full derivation this package's `Internal\TerminationCriteria` and step-size/covariance update logic
 follow.
 
+`purecma.py` carries its own **public-domain** dedication in its file header ("this code is released into
+the public domain ... you may use and modify it however you like"), separate from the BSD-3-Clause license
+covering the rest of the `pycma` repository it lives in — so nothing here is required for license
+compliance. The credit above is given because Hansen's design work is genuinely what this class is built
+on, not because it's legally owed.
+
 `RechenbergSchwefelEsAlgorithm` implements the Evolution Strategy pair **Ingo Rechenberg** and
 **Hans-Paul Schwefel** originated in the 1960s/70s — Rechenberg's (1+1)-ES and its 1/5 success rule for
 step-size adaptation, generalized to multiple parents/offspring the way Schwefel did. CMA-ES is itself a
