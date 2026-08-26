@@ -425,9 +425,20 @@ MIT. See [LICENSE](LICENSE).
 
 ## Acknowledgements
 
-`CmaEsAlgorithm` is a PHP port of **Nikolaus Hansen**'s own simplified reference implementation of CMA-ES
-("purecma") — the algorithm and its careful, from-scratch-avoiding implementation approach are entirely his
-life's work; any bugs introduced in adapting it to PHP are mine alone.
+`CmaEsAlgorithm` is a PHP port of **Nikolaus Hansen**'s ["purecma"](https://github.com/CMA-ES/pycma/blob/master/cma/purecma.py)
+— a from-scratch, dependency-free Python reference implementation Hansen wrote and maintains specifically
+so the algorithm's actual mechanics (not a production library's accumulated optimizations) can be read,
+verified, and ported by hand; that is exactly what this class is. The algorithm itself, its parameter
+defaults, and that pedagogical reference implementation are entirely Hansen's life's work — any bugs
+introduced in adapting it to PHP are mine alone. See his [CMA-ES tutorial](https://arxiv.org/abs/1604.00772)
+for the full derivation this package's `Internal\TerminationCriteria` and step-size/covariance update logic
+follow.
+
+`purecma.py` carries its own **public-domain** dedication in its file header ("this code is released into
+the public domain ... you may use and modify it however you like"), separate from the BSD-3-Clause license
+covering the rest of the `pycma` repository it lives in — so nothing here is required for license
+compliance. The credit above is given because Hansen's design work is genuinely what this class is built
+on, not because it's legally owed.
 
 `RechenbergSchwefelEsAlgorithm` implements the Evolution Strategy pair **Ingo Rechenberg** and
 **Hans-Paul Schwefel** originated in the 1960s/70s — Rechenberg's (1+1)-ES and its 1/5 success rule for
