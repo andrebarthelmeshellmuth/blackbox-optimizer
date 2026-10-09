@@ -16,7 +16,7 @@
     },
     "require-dev": {
         "dealerdirect/phpcodesniffer-composer-installer": "^1.0.0",
-        "phpmd/phpmd": "^2.15.0",
+        "phpmd/phpmd": "^2.15.0 || ^3.0.0",
         "phpstan/phpstan": "^2.0.0",
         "phpunit/phpunit": "^11.0.0",
         "rector/rector": "^2.0",
